@@ -1,0 +1,244 @@
+{
+    "openapi": "3.0.0",
+    "info": {
+        "title": "apteka-online.by API Documentation",
+        "version": "0.1"
+    },
+    "servers": [
+        {
+            "url": "https://test.mobile.apteka-online.by/api/"
+        }
+    ],
+    "paths": {
+        "/auth/request-code": {
+            "post": {
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Request SMS code",
+                "operationId": "9d7b33afaa8d3d257b1e8b22d310c79e",
+                "requestBody": {
+                    "description": "Provide All Info Below",
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "required": [
+                                    "phone"
+                                ],
+                                "properties": {
+                                    "phone": {
+                                        "type": "string",
+                                        "format": "text",
+                                        "example": "+37525-222-33-44"
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Successful operation"
+                    },
+                    "409": {
+                        "description": "Conflict"
+                    },
+                    "422": {
+                        "description": "Wrong data"
+                    }
+                }
+            }
+        },
+        "/auth/registration": {
+            "post": {
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Registration",
+                "operationId": "ab64011a46d09aed5bb6ded6f00911af",
+                "requestBody": {
+                    "description": "Provide All Info Below",
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "required": [
+                                    "phone",
+                                    "code"
+                                ],
+                                "properties": {
+                                    "phone": {
+                                        "type": "string",
+                                        "format": "text",
+                                        "example": "+37525-222-33-44"
+                                    },
+                                    "code": {
+                                        "type": "string",
+                                        "format": "text",
+                                        "example": "1234"
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Successful operation"
+                    },
+                    "409": {
+                        "description": "Conflict"
+                    },
+                    "422": {
+                        "description": "Wrong data"
+                    }
+                }
+            }
+        },
+        "/auth/update-password": {
+            "post": {
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Update password on registration",
+                "operationId": "a5cf21673947192e4ddfb270a5569a82",
+                "requestBody": {
+                    "description": "Provide All Info Below",
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "required": [
+                                    "phone",
+                                    "password"
+                                ],
+                                "properties": {
+                                    "phone": {
+                                        "type": "string",
+                                        "format": "text",
+                                        "example": "+37525-222-33-44"
+                                    },
+                                    "password": {
+                                        "type": "string",
+                                        "format": "text",
+                                        "example": "admin"
+                                    },
+                                    "code": {
+                                        "type": "string",
+                                        "format": "text",
+                                        "example": "1234"
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Successful operation"
+                    },
+                    "409": {
+                        "description": "conflict"
+                    },
+                    "422": {
+                        "description": "Wrong data"
+                    }
+                }
+            }
+        },
+        "/auth/login": {
+            "post": {
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Login",
+                "operationId": "1ff9c65c5cd1a8e0786e318eed856972",
+                "requestBody": {
+                    "description": "Provide All Info Below",
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "required": [
+                                    "phone",
+                                    "password"
+                                ],
+                                "properties": {
+                                    "phone": {
+                                        "type": "string",
+                                        "format": "text",
+                                        "example": "+37525-222-33-44"
+                                    },
+                                    "password": {
+                                        "type": "string",
+                                        "format": "text",
+                                        "example": "admin"
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Successful operation"
+                    },
+                    "409": {
+                        "description": "conflict"
+                    },
+                    "422": {
+                        "description": "Wrong data"
+                    }
+                }
+            }
+        },
+        "/auth/test": {
+            "post": {
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Test",
+                "operationId": "4ee5c7e1fb8e90796cf93a9a5a9c41b7",
+                "responses": {
+                    "200": {
+                        "description": "Successful operation"
+                    },
+                    "422": {
+                        "description": "Wrong data"
+                    }
+                }
+            }
+        },
+        "/auth/logout": {
+            "post": {
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Logout. NEED BEARER TOKEN",
+                "operationId": "eae6a8251a6469bbabe454860f64cf37",
+                "responses": {
+                    "200": {
+                        "description": "Successful operation"
+                    },
+                    "422": {
+                        "description": "Wrong data"
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    }
+                }
+            }
+        }
+    },
+    "tags": [
+        {
+            "name": "Auth",
+            "description": "Auth"
+        }
+    ]
+}

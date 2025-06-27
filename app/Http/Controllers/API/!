@@ -1,0 +1,53 @@
+﻿        if (preg_match('/commerce\/([a-z-_]+?)\/(payment-[a-z-]+?)$/', $route, $parts)) {
+            try {
+                $payment = $this->getPayment($parts[1]);
+            } catch (\Exception $e) {
+                return;
+            }
+
+            $payment = $this->getPayment($parts[1]);
+            $paymentProcessor = $payment['processor'];
+
+            switch ($parts[2]) {
+                case 'payment-process': {
+                    if ($paymentProcessor->handleCallback()) {
+                        exit;
+                    }
+                    break;
+                }
+
+                case 'payment-success': {
+                    if ($paymentProcessor->handleSuccess()) {
+                        $docid = $this->getSetting('payment_success_page_id', $this->modx->getConfig('site_start'));
+                        $url   = $this->modx->makeUrl($docid);
+
+                        $payment_hash = $paymentProcessor->getRequestPaymentHash();
+
+                        if (!empty($payment_hash) && is_scalar($payment_hash)) {
+                            $payment = $this->loadProcessor()->loadPaymentByHash($payment_hash);
+
+                            if (!empty($payment)) {
+                                ci()->flash->setMultiple([
+                                    'last_order_id'   => $payment['order_id'],
+                                    'last_payment_id' => $payment['id'],
+                                ]);
+                            }
+                        }
+
+                        $this->modx->sendRedirect($url);
+                        exit;
+                    }
+                    break;
+                }
+
+                case 'payment-failed': {
+                    if ($paymentProcessor->handleError()) {
+                        $docid = $this->getSetting('payment_failed_page_id', $this->modx->getConfig('site_start'));
+                        $url   = $this->modx->makeUrl($docid);
+                        $this->modx->sendRedirect($url);
+                        exit;
+                    }
+                    break;
+                }
+            }
+        }

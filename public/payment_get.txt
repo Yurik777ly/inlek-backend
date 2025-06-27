@@ -1,0 +1,5 @@
+array (
+  'token' => 'aa890fc7e6144cd18be60e9f6dc3163d',
+  'status' => 'failed',
+  'uid' => '65ab110f-0fb9-44c7-8ecb-34584ac8f007',
+)

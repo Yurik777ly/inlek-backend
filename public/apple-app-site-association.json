@@ -1,0 +1,17 @@
+    {
+        "applinks": {
+            "apps": [],
+            "details": [
+                {
+                    "appID": "RN3KN4U74Z.com.dkmfarm.inlek.app",
+                    "paths": [
+                        "/product/*",
+                        "/banner/*",
+                        "/article/*",
+                        "/news/*",
+                        "/sale/*"
+                    ]
+                }
+            ]
+        }
+    }
