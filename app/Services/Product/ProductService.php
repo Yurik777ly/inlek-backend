@@ -128,7 +128,7 @@ class ProductService
 
     public function getFilteredProducts(ProductDTO $productDto, $perPage=10, $page)//: array|LengthAwarePaginator
     {
-        $priceFilter = 
+        $priceFilter =
             $this->ProductInfoViewJsonFilter->query()
             ->select(['evo_product_info_view_json_opt.product_id', 'product_charachters', 'action_json', 'promocodes_json'])
             ->where('product_price_from', '>=', $productDto->priceFrom)
@@ -184,9 +184,9 @@ class ProductService
 
     public function getPharmaciesByProductId(ProductDTO $productDto)//: array|LengthAwarePaginator
     {
-        $pharmacyFilter = 
+        $pharmacyFilter =
             $this->ProductPharmacyJson->query()
-            ->select(['evo_product_pharmacy_json.product_id', 'evo_product_info_view_json_opt_noact.recipe', 'evo_product_info_view_json_opt_noact.is_recipe', 'evo_product_info_view_json_opt_noact.is_alcohol', 'evo_product_pharmacy_json.product_pharmacy_json'])
+            ->select(['evo_product_pharmacy_json.product_id', 'evo_product_info_view_json_opt_noact.is_recipe', 'evo_product_info_view_json_opt_noact.is_recipe', 'evo_product_info_view_json_opt_noact.is_alcohol', 'evo_product_pharmacy_json.product_pharmacy_json'])
             ->join('evo_product_info_view_json_opt_noact', 'evo_product_pharmacy_json.product_id', '=', 'evo_product_info_view_json_opt_noact.product_id')
             ->where('evo_product_pharmacy_json.product_id', $productDto->productId)
             ->when(!empty($productDto->pharmacyId), function($query) use($productDto) {
