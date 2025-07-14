@@ -133,7 +133,7 @@ class ProfileService
      */
     public function deleteProfile(User $user): void
     {
-        $user = $this->User->query()->where('id', $user->userId)->firstOrFail();
+        $user = $this->User->query()->where('id', $user->id)->firstOrFail();
         $this->SMS->query()->where('phone', $user->phone)->delete();
 
 /*
@@ -151,4 +151,3 @@ class ProfileService
         $user->delete();
     }
 }
-                 
