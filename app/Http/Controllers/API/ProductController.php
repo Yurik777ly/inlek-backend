@@ -66,9 +66,9 @@ class ProductController extends Controller
             brand: $validated['brand'] ?? [],
             country: $validated['country'] ?? [],
             recipe: $request->boolean('recipe'),
-            delivery: $request->boolean('recipe'),
-            available: $request->boolean('recipe'),
-            action: $request->boolean('recipe'),
+            delivery: $request->boolean('delivery'),
+            available: $request->boolean('available'),
+            action: $request->boolean('action'),
             sortBy: $validated['sortby'] ?? 'price_desc',
             categoryId: $validated['category_id'] ?? null,
         );
