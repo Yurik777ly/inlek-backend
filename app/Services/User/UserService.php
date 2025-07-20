@@ -40,6 +40,8 @@ class UserService
         } catch (ModelNotFoundException) {
             $this->User->password = Hash::make($authDTO->password);
             $this->User->phone = $authDTO->phone;
+            $this->User->accept_policy = true;
+            $this->User->status_notifications = true;
             $this->User->save();
         }
 
