@@ -124,7 +124,20 @@ class OrderService
             $fields = json_encode([
                 "comment" => $orderArray['comment'] ?? '',
                 "agree" => true,
-                "delivery" => ["id"=>$delivery_method, "title"=>$delivery_method_title],
+                "city" => $orderArray['city'] ?? '',
+                "street" => $orderArray['address'] ?? '',
+                "entrance"=> $orderArray['entrance'] ?? '',
+                "floor"=> $orderArray['floor'] ?? '',
+                "apartment"=> $orderArray['apartment'] ?? '',
+                "delivery" => [
+                    "id"=>$delivery_method,
+                    "title"=>$delivery_method_title,
+                    "city" => $orderArray['city'] ?? '',
+                    "street" => $orderArray['address'] ?? '',
+                    "entrance"=> $orderArray['entrance'] ?? '',
+                    "floor"=> $orderArray['floor'] ?? '',
+                    "apartment"=> $orderArray['apartment'] ?? '',
+                ],
                 "payment" => ["id"=>$payment_method,"title"=>$payment_method_title,"caption"=>""],
                 "sum" => [
                     "pricesSum" => $sum,    //стоимость товаров со скидкой
