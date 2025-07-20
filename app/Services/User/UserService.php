@@ -157,6 +157,7 @@ class UserService
             $user->update(
                 [
                     'phone' => $profileDTO->phone,
+                    'name' => $profileDTO->firstName . ' ' . $profileDTO->lastName,
                     'first_name' => $profileDTO->firstName,
                     'last_name' => $profileDTO->lastName,
                     'gender' => $profileDTO->gender,
