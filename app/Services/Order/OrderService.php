@@ -92,13 +92,13 @@ class OrderService
 
         $position = 1;
         $cartProducts = [];
-                                       
+
         $sum = 0;
         $oldsum = 0;
 
         $orderArray['pharmacy_id'] = ($orderArray['pharmacy_id'] == 0) ? 6864 : $orderArray['pharmacy_id'];
 
-        $orderProducts = [];       
+        $orderProducts = [];
         foreach ($products['product_info'] as $cartProduct) {
             if (in_array($cartProduct['product_charachters']['product_id'], $orderArray['ids'])) {
                 $price = (float)$cartProduct['product_charachters']['product_price_from'];
@@ -140,7 +140,7 @@ class OrderService
             ]);
 
         $this->EvoCommerceOrders->customer_id = auth()->user()->id;
-        $this->EvoCommerceOrders->name = $orderArray['first_name'];
+        $this->EvoCommerceOrders->name = $orderArray['first_name'] . ' ' . $orderArray['last_name'];
         $this->EvoCommerceOrders->phone = $orderArray['phone'];
         $this->EvoCommerceOrders->email = $orderArray['email'];
         $this->EvoCommerceOrders->hash = $this->generateUniqueHash();
@@ -153,7 +153,7 @@ class OrderService
         $this->EvoCommerceOrders->save();
         $order_id =  $this->EvoCommerceOrders->id;
 
- 
+
         foreach($orderProducts as $orderProduct) {
                 $orderProduct['order_id'] = $order_id;
                 $productObj = app()->make(EvoCommerceOrderProducts::class);
@@ -225,17 +225,17 @@ class OrderService
         }
 
         return $data;
-    
-        
+
+
 /*
     "city":"Минск",
     "address": "Хрущева"
 */
     }
-    
+
     public function getDetailed(string $userId, int $orderId)
     {
-        return 
+        return
             $this->OrderViewJson->query()
             ->where('customer_id', $userId)
             ->where('order_id', $orderId)->get();
@@ -250,7 +250,7 @@ class OrderService
         $deliveryTitles = DELIVERY_TITLES;
         if (!empty($delivery)) {
             $deliveryArCount = count($delivery);
-        
+
             if ($deliveryArCount == 1 && $delivery[0] == 'Самовывоз') {
                 $deliveryTitles = SELF_GET_TITLES;
             }
@@ -259,8 +259,8 @@ class OrderService
                 //dd($deliveryTitles);
             }
         }
-        
-        return 
+
+        return
             $this->OrderViewJson->query()
                 ->where('customer_id', $userId)
                 ->when(!empty($number), function($query) use($number) {
@@ -273,7 +273,7 @@ class OrderService
                     return $query->whereIn('delivery_method_title', $deliveryTitles);
                 })
                 ->get();
-            
+
     }
 
     /**
