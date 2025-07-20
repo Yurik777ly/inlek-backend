@@ -42,6 +42,7 @@ class UserService
             $this->User->phone = $authDTO->phone;
             $this->User->accept_policy = true;
             $this->User->status_notifications = true;
+            $this->User->name = 'Пользователь';
             $this->User->save();
         }
 
