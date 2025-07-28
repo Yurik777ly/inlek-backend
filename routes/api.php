@@ -37,10 +37,10 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::prefix('product')->group(function () {
         Route::get('/search',           [ProductController::class,  'getFilteredList']);
-        Route::get('/daily',            [ProductController::class,  'getDaily']);                         
+        Route::get('/daily',            [ProductController::class,  'getDaily']);
         Route::get('/{id}',             [ProductController::class,  'getById']);
-        Route::get('/{id}/pharmacies',  [ProductController::class,  'getPharmaciesByProductId']);                         
-                                
+        Route::get('/{id}/pharmacies',  [ProductController::class,  'getPharmaciesByProductId']);
+
     });
 
     Route::prefix('cart')->group(function () {
@@ -51,6 +51,10 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::delete('/',              [CartController::class, 'clearCart']);
         Route::post('/promo',           [CartController::class, 'addPromocode']);                //!!!
         Route::delete('/promo',         [CartController::class, 'deletePromocode']);             //!!!
+    });
+
+    Route::prefix('v2/cart')->group(function () {
+        Route::post('/pharmacies', [CartController::class, 'getProductPharmacyCartV2']);
     });
      /*
          Route::prefix('payments')->group(function () {

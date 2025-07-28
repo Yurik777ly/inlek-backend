@@ -248,10 +248,34 @@ class OrderService
 
     public function getDetailed(string $userId, int $orderId)
     {
-        return
-            $this->OrderViewJson->query()
+        $orders = $this->OrderViewJson->query()
             ->where('customer_id', $userId)
-            ->where('order_id', $orderId)->get();
+            ->where('order_id', $orderId)
+            ->get();
+
+        if ($orders->isEmpty()) {
+            return $orders;
+        }
+
+        $firstProduct = $orders->first()->order_products_json;
+
+        $firstPharmacyId = collect($firstProduct)
+            ->pluck('pharmacy_id')
+            ->filter()
+            ->first();
+
+        $pharmacyName = $firstPharmacyId
+            ? DB::table('evo_pharmacies_view')
+                ->where('pharmacy_id', $firstPharmacyId)
+                ->value('pagetitle')
+            : null;
+
+        $orders->transform(function($order) use ($pharmacyName) {
+            $order->pharmacy_name = $pharmacyName;
+            return $order;
+        });
+
+        return $orders;
     }
 
     /**

@@ -3,6 +3,8 @@
 namespace App\Http\Controllers\API;
 
 use App\Http\Controllers\Controller;
+use App\Http\Dto\Cart\CartPharmaciesDTO;
+use App\Http\Dto\Cart\CartProductItemDTO;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use App\Services\Cart\CartService;
@@ -87,5 +89,39 @@ class CartController extends Controller
     public function deletePromocode(Request $request): JsonResponse
     {
         return $this->responseOk();
+    }
+
+    public function getProductPharmacyCartV2(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'geo_lat'                 => ['required', 'numeric'],
+            'geo_long'                => ['required', 'numeric'],
+            'products'                => ['required', 'array'],
+            'products.*.product_id'   => ['required', 'integer'],
+            'products.*.quantity'     => ['required', 'integer'],
+        ]);
+
+        $this->CartService->setUserGeo(
+            $validated['geo_lat'],
+            $validated['geo_long']
+        );
+
+        $itemsDto = array_map(
+            fn(array $item) => new CartProductItemDTO(
+                productId: $item['product_id'],
+                quantity: $item['quantity']
+            ),
+            $validated['products']
+        );
+
+        $dto = new CartPharmaciesDTO(
+            geoLat:    (float) $validated['geo_lat'],
+            geoLong:   (float) $validated['geo_long'],
+            products:  $itemsDto,
+        );
+
+        return $this->responseOk(
+            $this->CartService->getProductByPharmacies($dto)
+        );
     }
 }
