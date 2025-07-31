@@ -5,6 +5,7 @@ namespace App\Services\Cart;
 use App\Http\Dto\Cart\CartDTO;
 use App\Http\Dto\Cart\CartDetailedDTO;
 use App\Http\Dto\Cart\CartPharmaciesDTO;
+use App\Http\Dto\Cart\CartProductItemDTO;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use App\Models\User;
@@ -95,11 +96,49 @@ class CartService
         $cart->delivery_zone = $cartDTO->deliveryZone ?? null;
         $cart->save();
 
-        $data = $this->CartsDetailed->query()->where('user_id', auth()->user()->id)->first();
-        if ($data) {
-            $data = $data->toArray();
+        $dataModel = $this->CartsDetailed
+            ->query()
+            ->where('user_id', auth()->id())
+            ->first();
+
+        if (! $dataModel) {
+            return [];
         }
-        return ($data) ? $data : [];
+
+        $data = $dataModel->toArray();
+
+        $products = $data['cart']['products'] ?? [];
+
+        $itemsDto = array_map(
+            fn(array $p) => new CartProductItemDTO(
+                productId: $p['product_id'],
+                quantity: $p['quantity'],
+            ),
+            $products
+        );
+
+        $pharmDto = new CartPharmaciesDTO(
+            geoLat: 53.9,
+            geoLong: 27.5667,
+            products: $itemsDto,
+        );
+
+        $pharmacies = $this->getProductByPharmacies($pharmDto);
+
+        $selected = collect($pharmacies)
+            ->firstWhere('pharmacy_id', $cartDTO->pharmacyId);
+
+        if ($selected) {
+            $data['pharmacy_name'] = $selected['pharmacy_name'];
+            $data['pharmacy_address'] = $selected['address'];
+            $data['pharmacy_availability'] = $selected['availability'];
+        } else {
+            $data['pharmacy_name'] = null;
+            $data['pharmacy_address'] = null;
+            $data['pharmacy_availability'] = 'absent';
+        }
+
+        return $data;
     }
 
     public function getProductByPharmacies(CartPharmaciesDTO $dto)
@@ -115,19 +154,14 @@ class CartService
 
         $requestedIds = array_map(fn($item) => $item->productId, $dto->products);
         $quantityMap = [];
-
         foreach ($dto->products as $item) {
             $quantityMap[$item->productId] = $item->quantity;
         }
 
         $cartEntries = array_filter(
             $record->cart,
-            fn(array $entry) => in_array($entry['product_id'], $requestedIds)
+            fn(array $e) => in_array($e['product_id'], $requestedIds, true)
         );
-
-        if (empty($cartEntries)) {
-            return [];
-        }
 
         foreach ($cartEntries as &$entry) {
             foreach ($entry['pharmacies'] as &$ph) {
@@ -172,44 +206,69 @@ class CartService
                         'total_price'      => 0.0,
                         'total_price_old'  => 0.0,
                         'total_discount'   => 0.0,
-                        'is_out_of_stock'  => true,
                     ];
                 }
 
-                $detail = $productDetails->get($prodId);
-                $name = $detail->pagetitle ?? '';
-                $image = $detail->image ?? null;
-                $isRecipe = isset($detail->is_recipe) ? filter_var($detail->is_recipe, FILTER_VALIDATE_BOOLEAN) : false;
-                $isAlcohol = isset($detail->is_alcohol) && $detail->is_alcohol === 'yes';
-
-                $stockCount = isset($ph['stock_count']) ? (float) $ph['stock_count'] : 0.0;
-                $price = isset($ph['price']) ? (float) $ph['price'] : 0.0;
-                $priceOld = isset($ph['price_old']) ? (float) $ph['price_old'] : 0.0;
-                $discount = $priceOld - $price;
+                $detail     = $productDetails->get($prodId);
+                $stockCount = (float) ($ph['stock_count'] ?? 0);
+                $price      = (float) ($ph['price']       ?? 0);
+                $priceOld   = (float) ($ph['price_old']   ?? 0);
+                $discount   = $priceOld - $price;
 
                 $pharmacies[$phId]['products'][] = [
                     'product_id'         => $prodId,
-                    'name'               => $name,
-                    'image'              => $image,
+                    'name'               => $detail->pagetitle ?? '',
+                    'image'              => $detail->image ?? null,
                     'requested_quantity' => $reqQty,
                     'stock_count'        => $stockCount,
                     'availability'       => $reqQty <= $stockCount ? 'full' : 'part',
                     'price'              => $price,
                     'price_old'          => $priceOld,
-                    'is_recipe'          => $isRecipe,
-                    'is_alcohol'         => $isAlcohol,
+                    'is_recipe'          => filter_var($detail->is_recipe ?? false, FILTER_VALIDATE_BOOLEAN),
+                    'is_alcohol'         => ($detail->is_alcohol ?? 'no') === 'yes',
                 ];
 
                 $pharmacies[$phId]['total_products']++;
-                $pharmacies[$phId]['total_price']      += $price * $reqQty;
-                $pharmacies[$phId]['total_price_old']  += $priceOld * $reqQty;
-                $pharmacies[$phId]['total_discount']   += $discount * $reqQty;
+                $pharmacies[$phId]['total_price']     += $price    * $reqQty;
+                $pharmacies[$phId]['total_price_old'] += $priceOld * $reqQty;
+                $pharmacies[$phId]['total_discount']  += $discount * $reqQty;
             }
         }
 
         foreach ($pharmacies as &$ph) {
+            $existing = array_column($ph['products'], 'product_id');
+            foreach ($requestedIds as $pid) {
+                if (!in_array($pid, $existing, true)) {
+                    $detail = $productDetails->get($pid);
+                    $ph['products'][] = [
+                        'product_id'         => $pid,
+                        'name'               => $detail->pagetitle ?? '',
+                        'image'              => $detail->image     ?? null,
+                        'requested_quantity' => $quantityMap[$pid],
+                        'stock_count'        => 0.0,
+                        'availability'       => 'absent',
+                        'price'              => 0.0,
+                        'price_old'          => 0.0,
+                        'is_recipe'          => filter_var($detail->is_recipe ?? false, FILTER_VALIDATE_BOOLEAN),
+                        'is_alcohol'         => ($detail->is_alcohol ?? 'no') === 'yes',
+                    ];
+                }
+            }
+        }
+        unset($ph);
+
+        foreach ($pharmacies as &$ph) {
             $productAvailabilities = array_column($ph['products'], 'availability');
-            $ph['availability'] = !in_array('part', $productAvailabilities, true) ? 'full' : 'part';
+            $unique = array_unique($productAvailabilities);
+
+            if (count($unique) === 1 && $unique[0] === 'absent') {
+                $ph['availability'] = 'absent';
+            } elseif (in_array('part', $productAvailabilities, true)
+                || in_array('absent', $productAvailabilities, true)) {
+                $ph['availability'] = 'part';
+            } else {
+                $ph['availability'] = 'full';
+            }
         }
         unset($ph);
 

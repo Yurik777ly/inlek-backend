@@ -264,14 +264,21 @@ class OrderService
             ->filter()
             ->first();
 
-        $pharmacyName = $firstPharmacyId
-            ? DB::table('evo_pharmacies_view')
-                ->where('pharmacy_id', $firstPharmacyId)
-                ->value('pagetitle')
+        $firstPharmacy = $firstPharmacyId ? DB::table('evo_pharmacies_view')
+            ->where('pharmacy_id', $firstPharmacyId)
+            ->first() : null;
+
+        $pharmacyName = $firstPharmacy
+            ? $firstPharmacy->pagetitle
             : null;
 
-        $orders->transform(function($order) use ($pharmacyName) {
+        $address = $firstPharmacy
+            ? $firstPharmacy->address
+            : null;
+
+        $orders->transform(function($order) use ($pharmacyName, $address) {
             $order->pharmacy_name = $pharmacyName;
+            $order->address = $address;
             return $order;
         });
 
