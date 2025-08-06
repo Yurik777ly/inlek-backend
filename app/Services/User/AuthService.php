@@ -10,6 +10,8 @@ use App\Models\User;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
 
+use App\Services\Notifications\FireBase;
+
 class AuthService
 {
     public function __construct(
@@ -89,6 +91,20 @@ class AuthService
             throw ValidationException::withMessages([
                 'password' => ['пароль введен неверно'],
             ]);
+        }
+
+        if (!empty($authDTO->fcm_token)) {
+            $this->UserService->updateFcmToken($authDTO);
+            $user = $this->getUser($authDTO);
+        }
+
+        if (!empty($user->fcm_token)) {
+            FireBase::send(
+                'Авторизация',
+                'Совершен вход в личный кабинет',
+                [$user->fcm_token],
+                []
+            );
         }
 
         //$user->tokens()->delete();

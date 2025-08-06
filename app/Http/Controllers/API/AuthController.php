@@ -12,7 +12,6 @@ use Illuminate\Validation\ValidationException;
 use Illuminate\Http\Request;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 
-
 class AuthController extends Controller
 {
     public function __construct(
@@ -234,11 +233,13 @@ class AuthController extends Controller
     {
         $validated = $request->validate([
             'phone' => ['required', 'regex:/^\+375(25|29|33|44)\-\d{3}\-\d{2}\-\d{2}$/'],
-            'password' => ['required']
+            'password' => ['required'],
+            'fcm_token' => ['string']
         ]);
         $authDto = new AuthDTO(
             phone:  $validated['phone'],
-            password:  $validated['password']
+            password:  $validated['password'],
+            fcm_token:  $validated['fcm_token'] ?? ''
         );
         $loginData = $this->AuthService->login($authDto);
         return $this->responseOk($loginData);

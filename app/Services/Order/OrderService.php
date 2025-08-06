@@ -17,6 +17,10 @@ use App\Services\Payment\Bepaid;
 use App\Services\Pharmacy\PharmacyService;
 
 use App\Services\Cart\CartService;
+use App\Http\Dto\Cart\CartDTO;
+use App\Http\Dto\Cart\CartDetailedDTO;
+
+
 
 const INACTIVE_STATUSES = [
     'Отменен',
@@ -86,31 +90,46 @@ class OrderService
         $payment_method = $orderArray['payment'];
         $payment_method_title = ($orderArray['delivery'] == 'cash') ? "При получении" : $payment_method;
 
-        $products = $this->CartService->getCart();
+        $orderArray['pharmacy_id'] = ($orderArray['pharmacy_id'] == 0) ? 6864 : $orderArray['pharmacy_id'];
+
+        //$products = $this->CartService->getCart();
+
+
+        $cartDTO = new CartDetailedDTO(
+            pharmacyId: $orderArray['pharmacy_id'],
+            deliveryZone: $orderArray['delivery_zone'] ?? null,
+            promocodes: ''
+        );
+
+        $this->CartService->setUserGeo('', '');
+
+        $products = $this->CartService->getCartDetailed($cartDTO);
 
         if(empty($products)) return false;
 
+
         $position = 1;
         $cartProducts = [];
-
+                                       
         $sum = 0;
         $oldsum = 0;
 
-        $orderArray['pharmacy_id'] = ($orderArray['pharmacy_id'] == 0) ? 6864 : $orderArray['pharmacy_id'];
 
-        $orderProducts = [];
-        foreach ($products['product_info'] as $cartProduct) {
-            if (in_array($cartProduct['product_charachters']['product_id'], $orderArray['ids'])) {
-                $price = (float)$cartProduct['product_charachters']['product_price_from'];
-                $price_old = $cartProduct['product_charachters']['product_price_from_old'] ?? 0;
-                $sum += $price * $cartProduct['quantity'];
-                $oldsum+= ($price_old > 0) ? $price_old*$cartProduct['quantity'] : $price*$cartProduct['quantity'];
+        $orderProducts = [];       
+        foreach ($products['cart']['products'] as $product) {
+            $cartProduct = $product['product_info'];
+            if (in_array($product['product_id'], $orderArray['ids'])) {
+
+                $price =     (float)$product['product_totals']['total'];
+                $price_old = (float)$product['product_totals']['total_old'] ?? 0;
+                $sum += $price * $product['quantity'];
+                $oldsum+= ($price_old > 0) ? $price_old*$product['quantity'] : $price*$product['quantity'];
 
                 $orderProducts[$position-1] = [
-                    'product_id' => $cartProduct['product_charachters']['product_id'],
-                    'title' => $cartProduct['product_charachters']['pagetitle'],
+                    'product_id' => $product['product_id'],
+                    'title' => $cartProduct['pagetitle'],
                     'price' => $price,
-                    'count' => $cartProduct['quantity'],
+                    'count' => $product['quantity'],
                     'options' => "{\"pharmacy_id\":{$orderArray['pharmacy_id']},\"iscancellations\":false,\"number_1c\":0,\"price\":{$price},\"price_old\":{$price_old}}",
                     'meta' => null,
                     'position' => $position,
@@ -120,6 +139,18 @@ class OrderService
         }
 
         $deliverySum = 0;
+        if ($delivery_method == 'delivery' && !empty($orderArray['delivery_zone'])) {
+            if ($orderArray['delivery_zone'] == 'yellow') {
+                $deliverySum = 8;
+            }
+            else if ($orderArray['delivery_zone'] == 'green') {
+                if ($oldsum >= 40) {
+                    $deliverySum = 0;
+                } else {
+                    $deliverySum = 8;
+                }
+            }
+        }
 
             $fields = json_encode([
                 "comment" => $orderArray['comment'] ?? '',
@@ -144,7 +175,7 @@ class OrderService
                     "oldPricesSum" => $oldsum, //стоимость товаров без скидки
                     "oldPricesSaleSum" => ($oldsum > 0) ? round((1 - $sum/$oldsum)*100,2) : 0, //скидка
                     "deliverySum" => $deliverySum, //доставка
-                    "totalSum" => $sum + $deliverySum // итого
+                    "totalSum" => $oldsum + $deliverySum // итого
                 ],
                 "delivery_method" => $delivery_method,
                 "delivery_method_title" => $delivery_method_title,
@@ -161,7 +192,7 @@ class OrderService
         $this->EvoCommerceOrders->fields = $fields;
         $this->EvoCommerceOrders->lang = 'russian-UTF8';
         $this->EvoCommerceOrders->currency = 'BYN';
-        $this->EvoCommerceOrders->amount = $sum;
+        $this->EvoCommerceOrders->amount = $oldsum;
 
         $this->EvoCommerceOrders->save();
         $order_id =  $this->EvoCommerceOrders->id;
@@ -185,7 +216,7 @@ class OrderService
 
 
         $this->EvoCommerceOrderPayments->order_id = $order_id;
-        $this->EvoCommerceOrderPayments->amount = $sum;
+        $this->EvoCommerceOrderPayments->amount = $oldsum + $deliverySum;
         $this->EvoCommerceOrderPayments->hash = $this->generateUniqueHash();
         $this->EvoCommerceOrderPayments->payment_method = $payment_method;
         $this->EvoCommerceOrderPayments->meta = '{}';

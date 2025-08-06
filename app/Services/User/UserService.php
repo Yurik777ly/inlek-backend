@@ -80,6 +80,19 @@ class UserService
     }
 
 
+    public function updateFcmToken(AuthDTO $authDTO): void
+    {
+        try {
+            $user = $this->User->query()->where('phone', $authDTO->phone)->firstOrFail();
+            $user->fcm_token = $authDTO->fcm_token;
+            $user->save();
+        } catch (ModelNotFoundException) {
+            throw ValidationException::withMessages([
+                'phone' => 'Аккаунта с таким номером не существует'
+            ]);
+        }
+    }
+
     /**
      * @param ProfileDTO $profileDTO
      * @return array
@@ -96,7 +109,7 @@ class UserService
                     $changes['error'] = 'Старый и новый пароли совпадают';
                 } else if ($profileDTO->newPasswordConfirm != $profileDTO->newPassword) {
                     $changes['error'] = 'Несовпадение нового пароля с подтвержденным';
-                } else if (Hash::check($profileDTO->oldPassword, $user->password)) {
+                } else if (!Hash::check($profileDTO->oldPassword, $user->password)) {
                     $changes['error'] = 'Текущий пароль пользователя указан неверно';
                 }
             } else {
