@@ -20,6 +20,7 @@ class OrderController extends Controller
         // Валидация данных
         $validator = Validator::make($request->all(), [
             'delivery' => 'required|string|in:self,delivery',
+            'delivery_zone' => 'string|in:yellow,green',
             'payment' => 'required|string',
             'pharmacy_id' => 'required|int',
             'last_name' => 'required|string|max:255',

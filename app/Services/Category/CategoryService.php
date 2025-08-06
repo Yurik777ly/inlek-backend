@@ -36,16 +36,22 @@ class CategoryService
 
     public function getForms(int $id = 2): Collection
     {
-        return collect(DB::select("CALL GetCategoryTreeForm(" . $id . ")"))->pluck('form');
+        return collect(DB::select("CALL GetCategoryTreeForm(" . $id . ")"))->pluck('form')
+		->filter()
+            	->values();
     }
 
     public function getBrands(int $id = 2): Collection
     {
-        return collect(DB::select("CALL GetCategoryTreeBrand(" . $id . ")"))->pluck('brand');
+        return collect(DB::select("CALL GetCategoryTreeBrand(" . $id . ")"))->pluck('brand')
+		->filter()
+            	->values();
     }
 
     public function getCountries(int $id = 2): Collection
     {
-        return  collect(DB::select("CALL GetCategoryTreeCountry(" . $id . ")"))->pluck('country');
+        return  collect(DB::select("CALL GetCategoryTreeCountry(" . $id . ")"))->pluck('country')
+		->filter()
+            	->values();
     }
 }

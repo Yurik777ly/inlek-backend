@@ -108,9 +108,12 @@ class ProfileService
             }
 
             if ($result['success']) {
+                $cnangesDTO = new AuthDTO(phone: $profileDTO->phone, password: $profileDTO->newPassword);
                 $result = $this->UserService->updateUser($profileDTO);
-
-                if ($result['success'] && $checkForm['phone']) {
+                if ($checkForm['password']) {
+                    $this->UserService->updatePassword($cnangesDTO);
+                }
+                if ($checkForm['phone']) {
                     $user = $this->User->query()->where('id', $profileDTO->userId)->firstOrFail();
                     $user->update(
                         [
@@ -118,8 +121,7 @@ class ProfileService
                         ]
                     );
 
-                    $authDTO = new AuthDTO(phone: $profileDTO->phone);
-                    $this->SMSService->clearSMSCode($authDTO);
+                    $this->SMSService->clearSMSCode($cnangesDTO);
                 }
 
             }
