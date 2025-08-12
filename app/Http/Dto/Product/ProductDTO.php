@@ -12,7 +12,7 @@ final class ProductDTO
         public array $form=[],
         public array $brand=[],
         public array $country=[],
-        public string $recipe='',
+        public ?bool $recipe=null,
         public bool $action=false,
         public ?bool $delivery=false,
         public ?bool $available=false,

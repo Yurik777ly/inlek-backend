@@ -142,8 +142,11 @@ class ProductService
             ->when(!empty($productDto->brand), function($query) use($productDto) {
                 return $query->whereIn('brand', $productDto->brand);
             })
-            ->when((!empty($productDto->recipe)), function($query) use($productDto) {
-                return $query->where('recipe', $productDto->recipe);
+            ->when((isset($productDto->recipe)) && $productDto->recipe == false, function($query) use($productDto) {
+                return $query->where(fn($q) => $q->where('recipe', 'no')->orWhereNull('recipe')->orWhere('recipe', ''));
+            })
+            ->when((isset($productDto->recipe)) && $productDto->recipe == true, function($query) use($productDto) {
+                 return $query->where('recipe', 'yes');
             })
             ->when(!empty($productDto->country), function($query) use($productDto) {
                 return $query->whereIn('country', $productDto->country);
@@ -152,7 +155,7 @@ class ProductService
                 return $query->where('delivery', 'Доставка');
             })
             ->when($productDto->action, function($query) use($productDto) {
-                return $query->whereNotNull('action_json');
+                return $query->where(fn($q) => $q->whereNotNull('action_json')->orWhereNotNull('product_price_from_percent'));
             })
             ->when($productDto->available, function ($query) use ($productDto) {
                 return $query->where('is_available', $productDto->available);
@@ -168,10 +171,10 @@ class ProductService
                 });
             })
             ->when($productDto->sortBy == 'price_desc', function($query) use($productDto) {
-                return $query->orderBy('evo_product_info_view_json_opt.product_price_from', 'DESC');
+                return $query->orderByRaw('(product_price_from+0) DESC');
             })
             ->when($productDto->sortBy == 'price_asc', function($query) use($productDto) {
-                return $query->orderBy('evo_product_info_view_json_opt.product_price_from', 'ASC');
+                return $query->orderByRaw('(product_price_from+0) ASC');
             })
             ->when($productDto->sortBy == 'popularity', function($query) use($productDto) {
                 return $query->orderBy('evo_product_info_view_json_opt.product_id', 'ASC');
