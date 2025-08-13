@@ -20,6 +20,7 @@ final class ProductDTO
         public ?int $categoryId=2,
         public ?int $pharmacyId=0,
         public ?string $pharmacyAddress='',
+        public ?string $city = null,
         public ?array $pharmacyDelivery=['Доставка', 'Самовывоз'],
     ) {}
 }

@@ -83,13 +83,15 @@ class ProductController extends Controller
             'delivery' => 'nullable|array',
             'pharmacy_id' => 'nullable|int',
             'address' => 'nullable|string',
+            'city' => 'nullable|string',
         ]);
 
         $productDto = new ProductDTO(
             productId: $id,
-            pharmacyDelivery: $validated['delivery'] ?? ['Доставка', 'Самовывоз'],
             pharmacyId: $validated['pharmacy_id'] ?? null,
             pharmacyAddress: $validated['address'] ?? null,
+            city: $validated['city'] ?? null,
+            pharmacyDelivery: $validated['delivery'] ?? ['Доставка', 'Самовывоз'],
         );
 
         $this->CartService->setUserGeo($request->get('geo_lat', ''), $request->get('geo_long', ''));

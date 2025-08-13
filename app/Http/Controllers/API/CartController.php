@@ -51,7 +51,7 @@ class CartController extends Controller
     public function getProductPharmacyCart(Request $request): JsonResponse
     {
         $this->CartService->setUserGeo($request->get('geo_lat', ''), $request->get('geo_long', ''));
-        return $this->responseOk($this->CartService->getProductPharmacyCart());
+        return $this->responseOk($this->CartService->getProductPharmacyCart($request->get('city', null)));
     }
 
     public function addToCart(Request $request): JsonResponse
