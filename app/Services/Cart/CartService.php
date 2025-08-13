@@ -78,14 +78,54 @@ class CartService
         $cart->save();
     }
 
-    public function getProductPharmacyCart()
+    public function getProductPharmacyCart(string $city = null)
     {
-        $this->checkCart();
-        $data = $this->CartProductPharmacyView->query()->where('user_id', auth()->user()->id)->first();
-        if($data) {
-            $data = $data->toArray();
+        $cityMap = [
+            'minsk'       => 'Минск',
+            'zhodino'     => 'Жодино',
+            'gomel'       => 'Гомель',
+            'brest'       => 'Брест',
+            'grodno'      => 'Гродно',
+            'vitebsk'     => 'Витебск',
+            'mogilev'     => 'Могилев',
+            'soligorsk'   => 'Солигорск',
+            'osipovichi'  => 'Осиповичи',
+            'lida'        => 'Лида',
+            'molodechno'  => 'Молодечно',
+            'baranovichi' => 'Барановичи',
+            'mozyr'       => 'Мозырь',
+        ];
+
+        $cityName = $cityMap[strtolower($city ?? '')] ?? ($city ?? '');
+        $cityNameLower = strtolower($cityName);
+
+        if (!empty($cityNameLower) && !empty($data['cart']) && is_array($data['cart'])) {
+            foreach ($data['cart'] as &$cartItem) {
+                if (empty($cartItem['pharmacies']) || !is_array($cartItem['pharmacies'])) {
+                    continue;
+                }
+
+                foreach ($cartItem['pharmacies'] as $i => &$ph) {
+                    $addrLower = strtolower($ph['address'] ?? '');
+                    $ph['_has_city'] = (str_contains($addrLower, $cityNameLower)) ? 1 : 0;
+                    $ph['_idx'] = $i;
+                }
+                unset($ph);
+
+                usort($cartItem['pharmacies'], function ($a, $b) {
+                    if ($a['_has_city'] !== $b['_has_city']) {
+                        return $a['_has_city'] ? -1 : 1;
+                    }
+                    return $a['_idx'] <=> $b['_idx'];
+                });
+
+                foreach ($cartItem['pharmacies'] as &$ph) {
+                    unset($ph['_has_city'], $ph['_idx']);
+                }
+                unset($ph);
+            }
+            unset($cartItem);
         }
-        return ($data) ? $data : [];
     }
 
     public function getCartDetailed(CartDetailedDTO $cartDTO)

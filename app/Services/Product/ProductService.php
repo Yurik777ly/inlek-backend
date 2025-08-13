@@ -187,20 +187,61 @@ class ProductService
 
     public function getPharmaciesByProductId(ProductDTO $productDto)//: array|LengthAwarePaginator
     {
-        $pharmacyFilter =
-            $this->ProductPharmacyJson->query()
-            ->select(['evo_product_pharmacy_json.product_id', 'evo_product_info_view_json_opt_noact.is_recipe', 'evo_product_info_view_json_opt_noact.is_recipe', 'evo_product_info_view_json_opt_noact.is_alcohol', 'evo_product_pharmacy_json.product_pharmacy_json'])
-            ->join('evo_product_info_view_json_opt_noact', 'evo_product_pharmacy_json.product_id', '=', 'evo_product_info_view_json_opt_noact.product_id')
+        $cityMap = [
+            'minsk'       => 'Минск',
+            'zhodino'     => 'Жодино',
+            'gomel'       => 'Гомель',
+            'brest'       => 'Брест',
+            'grodno'      => 'Гродно',
+            'vitebsk'     => 'Витебск',
+            'mogilev'     => 'Могилёв',
+            'soligorsk'   => 'Солигорск',
+            'osipovichi'  => 'Осиповичи',
+            'lida'        => 'Лида',
+            'molodechno'  => 'Молодечно',
+            'baranovichi' => 'Барановичи',
+            'mozyr'       => 'Мозырь',
+        ];
+
+        $cityName = null;
+
+        if ($productDto->city) {
+            $cityName = $cityMap[strtolower($productDto->city)] ?? $productDto->city;
+        }
+
+        $addressField = "JSON_UNQUOTE(JSON_EXTRACT(product_pharmacy_json, '$.address'))";
+
+        $pharmacyFilter = $this->ProductPharmacyJson->query()
+            ->select([
+                'evo_product_pharmacy_json.product_id',
+                'evo_product_info_view_json_opt_noact.is_recipe',
+                'evo_product_info_view_json_opt_noact.is_alcohol',
+                'evo_product_pharmacy_json.product_pharmacy_json'
+            ])
+            ->join(
+                'evo_product_info_view_json_opt_noact',
+                'evo_product_pharmacy_json.product_id',
+                '=',
+                'evo_product_info_view_json_opt_noact.product_id'
+            )
             ->where('evo_product_pharmacy_json.product_id', $productDto->productId)
             ->when(!empty($productDto->pharmacyId), function($query) use($productDto) {
                 return $query->where('pharmacy_id', $productDto->pharmacyId);
             })
             ->when(!empty($productDto->pharmacyDelivery), function($query) use($productDto) {
-                return $query->whereIn('evo_product_info_view_json_opt_noact.delivery', $productDto->pharmacyDelivery)
-                             ->whereIn('evo_product_pharmacy_json.pharmacy_delivery', $productDto->pharmacyDelivery);
+                return $query
+                    ->whereIn('evo_product_info_view_json_opt_noact.delivery', $productDto->pharmacyDelivery)
+                    ->whereIn('evo_product_pharmacy_json.pharmacy_delivery', $productDto->pharmacyDelivery);
             })
             ->when(!empty($productDto->pharmacyAddress), function($query) use($productDto) {
-                return $query->whereRaw('LOWER(address) LIKE ?', ['%' . strtolower($productDto->pharmacyAddress) . '%']);
+                return $query->whereRaw(
+                    "LOWER(JSON_UNQUOTE(JSON_EXTRACT(product_pharmacy_json, '$.address'))) LIKE ?",
+                    ['%' . strtolower($productDto->pharmacyAddress) . '%']
+                );
+            })
+            ->when($productDto->city, function($query) use($addressField, $cityName) {
+                return $query
+                    ->orderByRaw("CASE WHEN LOWER($addressField) LIKE ? THEN 0 ELSE 1 END", ['%' . strtolower($cityName) . '%']);
             })
             ->get();
 
