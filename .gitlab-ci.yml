@@ -1,0 +1,20 @@
+stages:
+  - deploy
+
+variables:
+  DEPLOY_PATH: "/var/www/www-root/data/www/test.mobile.apteka-online.by/"
+
+deploy:
+  stage: deploy
+  image: alpine:latest
+  before_script:
+    - apk add --no-cache openssh
+   # - mkdir -p ~/.ssh
+   # - echo "$DEV_SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
+   # - chmod 600 ~/.ssh/id_rsa
+   # - echo -e "Host *\n\tStrictHostKeyChecking no\n" > ~/.ssh/config
+  script:
+    - scp *.* DEV_PASSWORD@$DEV_HOST:$DEPLOY_PATH
+  tags:
+    - base
+  when: manual
