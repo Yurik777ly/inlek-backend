@@ -15,7 +15,7 @@ deploy:
    # - echo -e "Host *\n\tStrictHostKeyChecking no\n" > ~/.ssh/config
   script:
     - ls -la ./
-    - sshpass -p $DEV_PASSWORD scp -r ./* @$DEV_HOST:$DEPLOY_PATH
+    - sshpass -p $DEV_PASSWORD scp -r ./* $DEV_HOST:$DEPLOY_PATH
   tags:
     - base
   when: manual
