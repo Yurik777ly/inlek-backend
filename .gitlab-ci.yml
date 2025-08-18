@@ -14,7 +14,7 @@ deploy:
    # - chmod 600 ~/.ssh/id_rsa
    # - echo -e "Host *\n\tStrictHostKeyChecking no\n" > ~/.ssh/config
   script:
-    - scp *.* DEV_PASSWORD@$DEV_HOST:$DEPLOY_PATH
+    - sshpass -p $DEV_PASSWORD scp *.* @$DEV_HOST:$DEPLOY_PATH
   tags:
     - base
   when: manual
