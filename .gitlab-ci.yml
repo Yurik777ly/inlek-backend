@@ -9,10 +9,10 @@ deploy:
   image: alpine:latest
   before_script:
     - apk add --no-cache openssh sshpass
-   # - mkdir -p ~/.ssh
+    - mkdir -p ~/.ssh
    # - echo "$DEV_SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
    # - chmod 600 ~/.ssh/id_rsa
-   # - echo -e "Host *\n\tStrictHostKeyChecking no\n" > ~/.ssh/config
+    - echo -e "Host *\n\tStrictHostKeyChecking no\n" > ~/.ssh/config
   script:
     - ls -la ./
     - sshpass -p $DEV_PASSWORD scp -r ./* $DEV_HOST:$DEPLOY_PATH
