@@ -33,6 +33,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/history',          [OrderController::class, 'getOrders']);              //!!!
         Route::get('/statuses',         [OrderController::class, 'getOrderStatuses']);
         Route::get('/details/{orderId}',[OrderController::class, 'getDetailedOrder']);               //!!!
+        Route::post('/{orderId}/repeat',[CartController::class, 'repeatOrder']);
     });
 
     Route::prefix('product')->group(function () {
