@@ -112,7 +112,7 @@ class ProductService
     public function getProductDetails(ProductDTO $productDto): ?array
     {
         $product = $this->productInfoViewJsonDetailed->query()->where('product_id', $productDto->productId)
-            ->get(['product_id','product_charachters','action_json','promocodes_json','categories_json', 'brand_products', 'similar_products', 'related_products', 'category_products'])->first();
+            ->get(['product_id','product_charachters','action_json','promocodes_json','categories_json', 'brand_products', 'similar_products', 'related_products', 'category_products', 'instruction'])->first();
         if ($product) {
             $product = $product->toArray();
         }

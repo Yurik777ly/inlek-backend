@@ -5,6 +5,7 @@ namespace App\Http\Controllers\API;
 use App\Http\Controllers\Controller;
 use App\Http\Dto\Cart\CartPharmaciesDTO;
 use App\Http\Dto\Cart\CartProductItemDTO;
+use App\Services\Order\OrderService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use App\Services\Cart\CartService;
@@ -15,6 +16,7 @@ class CartController extends Controller
 {
     public function __construct(
         private readonly CartService $CartService,
+        protected readonly OrderService $OrderService,
     ) {
         if (!auth()->user()->cart) {
             $this->CartService->checkCart();
@@ -123,5 +125,24 @@ class CartController extends Controller
         return $this->responseOk(
             $this->CartService->getProductByPharmacies($dto)
         );
+    }
+
+    public function repeatOrder(Request $request, int $orderId): JsonResponse
+    {
+        $userId = $request->user()->id;
+        $order = $this->OrderService->getDetailed($userId, $orderId);
+
+        foreach ($order->order_products_json as $item) {
+            $cartDTO = new CartDTO(
+                user:   $request->user(),
+                cart:   $request->user()->cart,
+                product_id: $item['product_id'],
+                quantity:   $item['count']
+            );
+
+            $this->CartService->addToCart($cartDTO);
+        }
+
+        return $this->responseOk();
     }
 }
