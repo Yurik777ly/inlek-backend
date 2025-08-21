@@ -110,12 +110,12 @@ class OrderService
 
         $position = 1;
         $cartProducts = [];
-                                       
+
         $sum = 0;
         $oldsum = 0;
 
 
-        $orderProducts = [];       
+        $orderProducts = [];
         foreach ($products['cart']['products'] as $product) {
             $cartProduct = $product['product_info'];
             if (in_array($product['product_id'], $orderArray['ids'])) {
@@ -168,6 +168,17 @@ class OrderService
                     "entrance"=> $orderArray['entrance'] ?? '',
                     "floor"=> $orderArray['floor'] ?? '',
                     "apartment"=> $orderArray['apartment'] ?? '',
+                ],
+                'orderData' => [
+                    "delivery" => [
+                        "id"=>$delivery_method,
+                        "title"=>$delivery_method_title,
+                        "city" => $orderArray['city'] ?? '',
+                        "street" => $orderArray['address'] ?? '',
+                        "entrance"=> $orderArray['entrance'] ?? '',
+                        "floor"=> $orderArray['floor'] ?? '',
+                        "apartment"=> $orderArray['apartment'] ?? '',
+                    ],
                 ],
                 "payment" => ["id"=>$payment_method,"title"=>$payment_method_title,"caption"=>""],
                 "sum" => [
@@ -299,17 +310,19 @@ class OrderService
             ->where('pharmacy_id', $firstPharmacyId)
             ->first() : null;
 
-        $pharmacyName = $firstPharmacy
-            ? $firstPharmacy->pagetitle
-            : null;
+        $orders->transform(function($order) use ($firstPharmacy) {
+            $order->pharmacy_name = $firstPharmacy
+                ? $firstPharmacy->pagetitle
+                : null;
 
-        $address = $firstPharmacy
-            ? $firstPharmacy->address
-            : null;
+            $order->address = $firstPharmacy
+                ? $firstPharmacy->address
+                : null;
 
-        $orders->transform(function($order) use ($pharmacyName, $address) {
-            $order->pharmacy_name = $pharmacyName;
-            $order->address = $address;
+            $order->pharmacy_id = $firstPharmacy
+                ? $firstPharmacy->id
+                : null;
+
             return $order;
         });
 
