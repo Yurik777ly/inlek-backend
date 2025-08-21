@@ -320,7 +320,7 @@ class OrderService
                 : null;
 
             $order->pharmacy_id = $firstPharmacy
-                ? $firstPharmacy->id
+                ? $firstPharmacy->pharmacy_id
                 : null;
 
             return $order;
