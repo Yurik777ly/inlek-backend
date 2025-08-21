@@ -187,30 +187,6 @@ class ProductService
 
     public function getPharmaciesByProductId(ProductDTO $productDto)//: array|LengthAwarePaginator
     {
-        $cityMap = [
-            'minsk'       => 'Минск',
-            'zhodino'     => 'Жодино',
-            'gomel'       => 'Гомель',
-            'brest'       => 'Брест',
-            'grodno'      => 'Гродно',
-            'vitebsk'     => 'Витебск',
-            'mogilev'     => 'Могилёв',
-            'soligorsk'   => 'Солигорск',
-            'osipovichi'  => 'Осиповичи',
-            'lida'        => 'Лида',
-            'molodechno'  => 'Молодечно',
-            'baranovichi' => 'Барановичи',
-            'mozyr'       => 'Мозырь',
-        ];
-
-        $cityName = null;
-
-        if ($productDto->city) {
-            $cityName = $cityMap[strtolower($productDto->city)] ?? $productDto->city;
-        }
-
-        $addressField = "JSON_UNQUOTE(JSON_EXTRACT(product_pharmacy_json, '$.address'))";
-
         $pharmacyFilter = $this->ProductPharmacyJson->query()
             ->select([
                 'evo_product_pharmacy_json.product_id',
@@ -239,9 +215,16 @@ class ProductService
                     ['%' . strtolower($productDto->pharmacyAddress) . '%']
                 );
             })
-            ->when($productDto->city, function($query) use($addressField, $cityName) {
-                return $query
-                    ->orderByRaw("CASE WHEN LOWER($addressField) LIKE ? THEN 0 ELSE 1 END", ['%' . strtolower($cityName) . '%']);
+            ->when(!empty($productDto->geoLat) && !empty($productDto->geoLong), function($query) use ($productDto) {
+                return $query->whereRaw("
+            (
+                6371000 * acos(
+                    cos(radians(?)) * cos(radians(SUBSTRING_INDEX(coordinates, ',', 1))) *
+                    cos(radians(SUBSTRING_INDEX(coordinates, ',', -1)) - radians(?)) +
+                    sin(radians(?)) * sin(radians(SUBSTRING_INDEX(coordinates, ',', 1)))
+                )
+            ) <= ?
+        ", [$productDto->geoLat, $productDto->geoLat, $productDto->geoLat, 500000]);
             })
             ->get();
 

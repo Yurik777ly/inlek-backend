@@ -22,5 +22,7 @@ final class ProductDTO
         public ?string $pharmacyAddress='',
         public ?string $city = null,
         public ?array $pharmacyDelivery=['Доставка', 'Самовывоз'],
+        public ?string $geoLat= null,
+        public ?string $geoLong= null,
     ) {}
 }
