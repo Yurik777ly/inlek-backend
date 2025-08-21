@@ -130,7 +130,7 @@ class CartController extends Controller
     public function repeatOrder(Request $request, int $orderId): JsonResponse
     {
         $userId = $request->user()->id;
-        $order = $this->OrderService->getDetailed($userId, $orderId);
+        $order = $this->OrderService->getDetailed($userId, $orderId)->first();
 
         foreach ($order->order_products_json as $item) {
             $cartDTO = new CartDTO(
