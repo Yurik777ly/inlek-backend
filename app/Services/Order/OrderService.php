@@ -79,8 +79,8 @@ class OrderService
             auth()->user()->update(
                 [
                     'phone' => $orderArray['phone'],
-                    'first_name' => $orderArray['first_name'],
-                    'last_name' => $orderArray['last_name'],
+                    'last_name' => $orderArray['first_name'],
+                    'first_name' => $orderArray['last_name'],
                     'email' => $orderArray['email'],
                 ]
             );
