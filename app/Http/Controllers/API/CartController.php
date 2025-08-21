@@ -130,19 +130,55 @@ class CartController extends Controller
     public function repeatOrder(Request $request, int $orderId): JsonResponse
     {
         $userId = $request->user()->id;
-        $order = $this->OrderService->getDetailed($userId, $orderId)->first();
 
-        foreach ($order->order_products_json as $item) {
-            $cartDTO = new CartDTO(
-                user:   $request->user(),
-                cart:   $request->user()->cart,
-                product_id: $item['product_id'],
-                quantity:   $item['count']
-            );
+        $orders = $this->OrderService->getDetailed($userId, $orderId);
 
-            $this->CartService->addToCart($cartDTO);
+        if ($orders->isEmpty()) {
+            return $this->responseError('Заказ не найден', 404);
         }
 
-        return $this->responseOk();
+        $order = $orders->first();
+
+        // Проверяем наличие продуктов в заказе
+        if (empty($order->order_products_json)) {
+            return $this->responseError('В заказе нет товаров для повтора', 400);
+        }
+
+        $addedProducts = [];
+        $failedProducts = [];
+
+        foreach ($order->order_products_json as $item) {
+            try {
+                $cartDTO = new CartDTO(
+                    user: $request->user(),
+                    cart: $request->user()->cart,
+                    product_id: $item['product_id'],
+                    quantity: $item['count']
+                );
+
+                $this->CartService->addToCart($cartDTO);
+                $addedProducts[] = [
+                    'product_id' => $item['product_id'],
+                    'title' => $item['title'] ?? 'Товар',
+                    'quantity' => $item['count']
+                ];
+            } catch (\Exception $e) {
+                $failedProducts[] = [
+                    'product_id' => $item['product_id'],
+                    'title' => $item['title'] ?? 'Товар',
+                    'quantity' => $item['count'],
+                    'error' => 'Не удалось добавить товар в корзину'
+                ];
+            }
+        }
+
+        return $this->responseOk([
+            'message' => 'Заказ повторен',
+            'order_id' => $orderId,
+            'added_products' => $addedProducts,
+            'failed_products' => $failedProducts,
+            'added_count' => count($addedProducts),
+            'failed_count' => count($failedProducts)
+        ]);
     }
 }

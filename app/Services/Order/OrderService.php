@@ -299,7 +299,10 @@ class OrderService
             return $orders;
         }
 
-        $firstProduct = $orders->first()->order_products_json;
+        $firstOrder = $orders->first();
+        $firstProduct = $firstOrder->order_products_json;
+
+        $orderFields = json_decode($firstOrder->fields, true);
 
         $firstPharmacyId = collect($firstProduct)
             ->pluck('pharmacy_id')
@@ -310,7 +313,7 @@ class OrderService
             ->where('pharmacy_id', $firstPharmacyId)
             ->first() : null;
 
-        $orders->transform(function($order) use ($firstPharmacy) {
+        $orders->transform(function($order) use ($firstPharmacy, $orderFields) {
             $order->pharmacy_name = $firstPharmacy
                 ? $firstPharmacy->pagetitle
                 : null;
@@ -322,6 +325,49 @@ class OrderService
             $order->pharmacy_id = $firstPharmacy
                 ? $firstPharmacy->pharmacy_id
                 : null;
+
+            if (!empty($orderFields)) {
+                $order->prices_sum = $orderFields['sum']['pricesSum'] ?? 0; // стоимость товаров со скидкой
+                $order->old_prices_sum = $orderFields['sum']['oldPricesSum'] ?? 0; // стоимость товаров без скидки
+                $order->old_prices_sale_sum = $orderFields['sum']['oldPricesSaleSum'] ?? 0; // процент скидки
+                $order->delivery_sum = $orderFields['sum']['deliverySum'] ?? 0; // стоимость доставки
+                $order->total_sum = $orderFields['sum']['totalSum'] ?? 0; // итоговая сумма
+
+                // Информация о промокодах (если есть)
+                $order->promocodes_discount = $orderFields['sum']['promocodesDiscount'] ?? 0;
+
+                // Комментарий к заказу
+                $order->comment = $orderFields['comment'] ?? '';
+
+                // Дополнительная информация о доставке
+                if (!empty($orderFields['delivery'])) {
+                    $deliveryInfo = $orderFields['delivery'];
+                    $order->delivery_method = $deliveryInfo['id'] ?? $orderFields['delivery_method'] ?? null;
+                    $order->delivery_method_title = $deliveryInfo['title'] ?? $orderFields['delivery_method_title'] ?? null;
+
+                    // Полный адрес доставки
+                    $addressParts = [];
+                    if (!empty($deliveryInfo['city'])) $addressParts[] = $deliveryInfo['city'];
+                    if (!empty($deliveryInfo['street'])) $addressParts[] = $deliveryInfo['street'];
+                    if (!empty($deliveryInfo['entrance'])) $addressParts[] = 'подъезд ' . $deliveryInfo['entrance'];
+                    if (!empty($deliveryInfo['floor'])) $addressParts[] = 'этаж ' . $deliveryInfo['floor'];
+                    if (!empty($deliveryInfo['apartment'])) $addressParts[] = 'кв. ' . $deliveryInfo['apartment'];
+
+                    $order->full_delivery_address = !empty($addressParts) ? implode(', ', $addressParts) : null;
+                }
+
+                // Информация о способе оплаты
+                if (!empty($orderFields['payment'])) {
+                    $order->payment_method = $orderFields['payment']['id'] ?? $orderFields['payment_method'] ?? null;
+                    $order->payment_method_title = $orderFields['payment']['title'] ?? $orderFields['payment_method_title'] ?? null;
+                }
+
+                // Дополнительные поля для удобства фронтенда
+                $order->has_discount = ($order->old_prices_sum > $order->prices_sum);
+                $order->discount_amount = $order->old_prices_sum - $order->prices_sum;
+                $order->is_delivery = ($order->delivery_sum > 0);
+                $order->has_promocodes = ($order->promocodes_discount > 0);
+            }
 
             return $order;
         });

@@ -64,6 +64,41 @@ class OrderController extends Controller
     {
         $userId = $request->user()->id;
         $order = $this->OrderService->getDetailed($userId, $orderId);
+
+        if (!$order->isEmpty()) {
+            $orderData = $order->first();
+
+            $response = [
+                'order' => $orderData,
+                'summary' => [
+                    'products_price' => $orderData->prices_sum ?? 0,
+                    'products_price_old' => $orderData->old_prices_sum ?? 0,
+                    'discount_percent' => $orderData->old_prices_sale_sum ?? 0,
+                    'discount_amount' => $orderData->discount_amount ?? 0,
+                    'promocodes_discount' => $orderData->promocodes_discount ?? 0,
+                    'delivery_price' => $orderData->delivery_sum ?? 0,
+                    'total_price' => $orderData->total_sum ?? 0,
+                ],
+                'delivery_info' => [
+                    'method' => $orderData->delivery_method ?? null,
+                    'method_title' => $orderData->delivery_method_title ?? null,
+                    'address' => $orderData->full_delivery_address ?? null,
+                    'is_delivery' => $orderData->is_delivery ?? false,
+                ],
+                'payment_info' => [
+                    'method' => $orderData->payment_method ?? null,
+                    'method_title' => $orderData->payment_method_title ?? null,
+                ],
+                'additional' => [
+                    'comment' => $orderData->comment ?? '',
+                    'has_discount' => $orderData->has_discount ?? false,
+                    'has_promocodes' => $orderData->has_promocodes ?? false,
+                ]
+            ];
+
+            return $this->responseOk(data: $response);
+        }
+
         return $this->responseOk(data: $order);
     }
 
@@ -108,8 +143,8 @@ class OrderController extends Controller
     }
 
     public function payment(Request $request): JsonResponse
-    {     
-        if(!empty($request->token)) 
+    {
+        if(!empty($request->token))
         {
             $this->OrderService->pay($request->token);
         }
@@ -127,5 +162,5 @@ class OrderController extends Controller
             'oplati' => env('oplati', '0'),
         ]);
     }
-        
+
 }
