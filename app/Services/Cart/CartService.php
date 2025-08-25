@@ -299,7 +299,7 @@ class CartService
 
         foreach ($pharmacies as &$ph) {
             $productAvailabilities = array_column($ph['products'], 'availability');
-            $unique = array_unique($productAvailabilities);
+            $unique = array_values(array_unique($productAvailabilities));
 
             if (count($unique) === 1 && $unique[0] === 'absent') {
                 $ph['availability'] = 'absent';
@@ -312,11 +312,25 @@ class CartService
         }
         unset($ph);
 
-        usort($pharmacies, fn($a, $b) =>
-            ($a['distance_meters']  ?? INF)
-            <=>
-            ($b['distance_meters']  ?? INF)
-        );
+        $availabilityPriority = [
+            'full'   => 0,
+            'part'   => 1,
+            'absent' => 2,
+        ];
+
+        usort($pharmacies, function ($a, $b) use ($availabilityPriority) {
+            $pa = $availabilityPriority[$a['availability'] ?? 'absent'] ?? PHP_INT_MAX;
+            $pb = $availabilityPriority[$b['availability'] ?? 'absent'] ?? PHP_INT_MAX;
+
+            if ($pa !== $pb) {
+                return $pa <=> $pb;
+            }
+
+            $da = isset($a['distance_meters']) ? (float)$a['distance_meters'] : INF;
+            $db = isset($b['distance_meters']) ? (float)$b['distance_meters'] : INF;
+
+            return $da <=> $db;
+        });
 
         return array_values($pharmacies);
     }

@@ -187,12 +187,13 @@ class ProductService
 
     public function getPharmaciesByProductId(ProductDTO $productDto)//: array|LengthAwarePaginator
     {
-        $pharmacyFilter = $this->ProductPharmacyJson->query()
+       $rows = $this->ProductPharmacyJson->query()
             ->select([
                 'evo_product_pharmacy_json.product_id',
                 'evo_product_info_view_json_opt_noact.is_recipe',
                 'evo_product_info_view_json_opt_noact.is_alcohol',
-                'evo_product_pharmacy_json.product_pharmacy_json'
+                'evo_product_pharmacy_json.product_pharmacy_json',
+                'evo_product_pharmacy_json.coordinates'
             ])
             ->join(
                 'evo_product_info_view_json_opt_noact',
@@ -215,19 +216,179 @@ class ProductService
                     ['%' . strtolower($productDto->pharmacyAddress) . '%']
                 );
             })
-            ->when(!empty($productDto->geoLat) && !empty($productDto->geoLong), function($query) use ($productDto) {
-                return $query->whereRaw("
-            (
-                6371000 * acos(
-                    cos(radians(?)) * cos(radians(SUBSTRING_INDEX(coordinates, ',', 1))) *
-                    cos(radians(SUBSTRING_INDEX(coordinates, ',', -1)) - radians(?)) +
-                    sin(radians(?)) * sin(radians(SUBSTRING_INDEX(coordinates, ',', 1)))
-                )
-            ) <= ?
-        ", [$productDto->geoLat, $productDto->geoLat, $productDto->geoLat, 500000]);
-            })
             ->get();
 
-        return $pharmacyFilter;
+        $pharmacies = [];
+
+        $requestedQty = (int) ($productDto->quantity ?? 1);
+        $filterDelivery = !empty($productDto->pharmacyDelivery) ? (array) $productDto->pharmacyDelivery : null;
+        $filterAddress = !empty($productDto->pharmacyAddress) ? strtolower($productDto->pharmacyAddress) : null;
+        $filterPharmacyId = $productDto->pharmacyId ?? null;
+        $hasGeo = isset($productDto->geoLat) && isset($productDto->geoLong);
+        $userLat = $productDto->geoLat ?? null;
+        $userLng = $productDto->geoLong ?? null;
+
+        foreach ($rows as $row) {
+            $isRecipe  = $row->is_recipe ?? false;
+            $isAlcohol = ($row->is_alcohol ?? 'no') === 'yes';
+            $rowCoordsFallback = isset($row->coordinates) ? trim($row->coordinates) : null;
+
+            $json = json_decode($row->product_pharmacy_json, true);
+            if ($json === null) {
+                continue;
+            }
+
+            if (isset($json['pharmacies']) && is_array($json['pharmacies'])) {
+                $items = $json['pharmacies'];
+            } elseif (is_array($json) && array_values($json) !== $json && isset($json['pharmacy_id'])) {
+                $items = [$json];
+            } else {
+                $items = is_array($json) ? $json : [];
+            }
+
+            foreach ($items as $ph) {
+                if (!is_array($ph)) {
+                    continue;
+                }
+
+                $phId = $ph['pharmacy_id'] ?? null;
+                if ($phId === null) {
+                    continue;
+                }
+
+                if ($filterPharmacyId !== null && ((string)$filterPharmacyId !== (string)$phId)) {
+                    continue;
+                }
+
+                if ($filterDelivery !== null) {
+                    $phDelivery = $ph['pharmacy_delivery'] ?? $ph['delivery'] ?? null;
+                    if ($phDelivery !== null) {
+                        $phDeliveryArr = is_array($phDelivery) ? $phDelivery : [$phDelivery];
+                        $intersection = array_intersect($filterDelivery, $phDeliveryArr);
+                        if (count($intersection) === 0) {
+                            continue;
+                        }
+                    } else {
+                        continue;
+                    }
+                }
+
+                if ($filterAddress !== null) {
+                    $addr = strtolower($ph['address'] ?? '');
+                    if (!str_contains($addr, $filterAddress)) {
+                        continue;
+                    }
+                }
+
+                $coords = null;
+                if (!empty($ph['coordinates'])) {
+                    $coords = trim($ph['coordinates']);
+                } elseif (!empty($rowCoordsFallback)) {
+                    $coords = $rowCoordsFallback;
+                }
+
+                $distance = null;
+                if ($hasGeo && !empty($coords) && is_string($coords)) {
+                    $parts = preg_split('/\s*,\s*/', $coords);
+                    if (count($parts) >= 2) {
+                        $plat = (float) $parts[0];
+                        $plng = (float) $parts[1];
+                        try {
+                            $distance = $this->haversineDistance((float)$userLat, (float)$userLng, $plat, $plng);
+                        } catch (\Throwable $e) {
+                            $distance = null;
+                        }
+                    }
+                }
+
+                $stockCount = isset($ph['stock_count']) ? (float)$ph['stock_count'] : 0.0;
+                $price      = isset($ph['price']) ? (float)$ph['price'] : 0.0;
+                $priceOld   = isset($ph['price_old']) ? (float)$ph['price_old'] : 0.0;
+
+                $availability = 'absent';
+                if ($stockCount > 0 && $stockCount >= $requestedQty) {
+                    $availability = 'full';
+                } elseif ($stockCount > 0 && $stockCount < $requestedQty) {
+                    $availability = 'part';
+                } else {
+                    $availability = 'absent';
+                }
+
+                if (!isset($pharmacies[$phId])) {
+                    $pharmacies[$phId] = [
+                        'pharmacy_id'      => $phId,
+                        'pharmacy_name'    => $ph['pharmacy_name'] ?? $ph['name'] ?? null,
+                        'address'          => $ph['address'] ?? null,
+                        'coordinates'      => $coords,
+                        'distance_meters'  => $distance,
+                        'stock_count'      => $stockCount,
+                        'availability'     => $availability,
+                        'price'            => $price,
+                        'price_old'        => $priceOld,
+                        'is_recipe'        => filter_var($isRecipe ?? false, FILTER_VALIDATE_BOOLEAN),
+                        'is_alcohol'       => $isAlcohol,
+                        'pharmacy_delivery'=> $ph['pharmacy_delivery'] ?? null,
+                        'raw'              => $ph,
+                    ];
+                } else {
+                    $prio = ['full' => 3, 'part' => 2, 'absent' => 1];
+                    $curP = $prio[$pharmacies[$phId]['availability']] ?? 0;
+                    $newP = $prio[$availability] ?? 0;
+                    if ($newP > $curP) {
+                        $pharmacies[$phId]['availability'] = $availability;
+                        $pharmacies[$phId]['stock_count']  = $stockCount;
+                        $pharmacies[$phId]['price']        = $price;
+                        $pharmacies[$phId]['price_old']    = $priceOld;
+                        $pharmacies[$phId]['raw']          = $ph;
+                        $pharmacies[$phId]['coordinates']  = $coords ?? $pharmacies[$phId]['coordinates'];
+                    }
+
+                    if ($distance !== null) {
+                        if ($pharmacies[$phId]['distance_meters'] === null) {
+                            $pharmacies[$phId]['distance_meters'] = $distance;
+                        } else {
+                            $pharmacies[$phId]['distance_meters'] = min((float)$pharmacies[$phId]['distance_meters'], (float)$distance);
+                        }
+                    }
+                }
+            }
+        }
+
+        $list = array_values($pharmacies);
+
+        usort($list, function ($a, $b) {
+            $availabilityPriority = [
+                'full' => 0,
+                'part' => 1,
+                'absent' => 2,
+            ];
+
+            $pa = $availabilityPriority[$a['availability'] ?? 'absent'] ?? PHP_INT_MAX;
+            $pb = $availabilityPriority[$b['availability'] ?? 'absent'] ?? PHP_INT_MAX;
+
+            if ($pa !== $pb) {
+                return $pa <=> $pb;
+            }
+
+            $da = isset($a['distance_meters']) ? (float)$a['distance_meters'] : INF;
+            $db = isset($b['distance_meters']) ? (float)$b['distance_meters'] : INF;
+
+            return $da <=> $db;
+        });
+
+        return $list;
+    }
+
+    private function haversineDistance(float $lat1, float $lon1, float $lat2, float $lon2): float
+    {
+        $earthRadius = 6371000;
+        $dLat = deg2rad($lat2 - $lat1);
+        $dLon = deg2rad($lon2 - $lon1);
+        $a = sin($dLat / 2) ** 2
+            + cos(deg2rad($lat1)) * cos(deg2rad($lat2))
+            * sin($dLon / 2) ** 2;
+        $c = 2 * atan2(sqrt($a), sqrt(1 - $a));
+
+        return $earthRadius * $c;
     }
 }
