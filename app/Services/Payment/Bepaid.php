@@ -11,7 +11,7 @@ class Bepaid extends Payment
     public function __construct()
     {
         $this->settings = [
-            'test' => 1,
+            'test' => 0,
             'shop_id' => '27288',
             'secret_key' => '2b1554a3d2b476bb14bb31386c301dafe1f0d67a247825683bab0560d09c0aea',
         ];
@@ -32,14 +32,14 @@ class Bepaid extends Payment
                 'transaction_type' => 'payment',
                 'test' => $this->settings['test'] == '1',
                 'settings' => [
-                    'return_url'  => config('app.url') . '/api/payments/payment-success',
-                    'success_url' => config('app.url') . '/api/payments/payment-success',
+                    'return_url'  => config('app.url') . '/api/payments/payment-success?token=' . $payment->hash,
+                    'success_url' => config('app.url') . '/api/payments/payment-success?token=' . $payment->hash,
 
-                    'decline_url' => config('app.url') . '/api/payments/payment-failed',
-                    'fail_url'    => config('app.url') . '/api/payments/payment-failed',
-                    'cancel_url'  => config('app.url') . '/api/payments/payment-failed',
+                    'decline_url' => config('app.url') . '/api/payments/payment-failed?token=' . $payment->hash,
+                    'fail_url'    => config('app.url') . '/api/payments/payment-failed?token=' . $payment->hash,
+                    'cancel_url'  => config('app.url') . '/api/payments/payment-failed?token=' . $payment->hash,
 
-                    'notification_url' => config('app.url') . '/payments/payment-process?paymentHash=' . $payment['hash'],
+                    'notification_url' => config('app.url') . '/api/payments/payment-process?token=' . $payment->hash,
                     'language' => "ru",
                 ],
                 'order' => [
