@@ -14,6 +14,7 @@ use App\Models\EVO\EvoCommerceOrderHistory;
 use App\Models\EVO\EvoCommerceOrderPayments;
 
 use App\Services\Payment\Bepaid;
+use App\Services\Payment\Oplati;
 use App\Services\Pharmacy\PharmacyService;
 
 use App\Services\Cart\CartService;
@@ -239,6 +240,9 @@ class OrderService
         switch($payment_method) {
             case 'bepaid':
                 $processor = new Bepaid();
+            break;
+            case 'oplati':
+                $processor = new Oplati();
             break;
             default:
                 $processor = null;
