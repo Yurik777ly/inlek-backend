@@ -233,7 +233,7 @@ class ProductService
             $isAlcohol = ($row->is_alcohol ?? 'no') === 'yes';
             $rowCoordsFallback = isset($row->coordinates) ? trim($row->coordinates) : null;
 
-            $json = json_decode($row->product_pharmacy_json, true);
+            $json = $row->product_pharmacy_json;
             if ($json === null) {
                 continue;
             }
