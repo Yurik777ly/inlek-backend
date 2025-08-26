@@ -234,15 +234,29 @@ class AuthController extends Controller
         $validated = $request->validate([
             'phone' => ['required', 'regex:/^\+375(25|29|33|44)\-\d{3}\-\d{2}\-\d{2}$/'],
             'password' => ['required'],
-            'fcm_token' => ['string']
+            'fcm_token' => ['nullable', 'string']
         ]);
+
         $authDto = new AuthDTO(
-            phone:  $validated['phone'],
-            password:  $validated['password'],
-            fcm_token:  $validated['fcm_token'] ?? ''
+            phone: $validated['phone'],
+            password: $validated['password'],
+            fcm_token: $validated['fcm_token'] ?? ''
         );
-        $loginData = $this->AuthService->login($authDto);
-        return $this->responseOk($loginData);
+
+        try {
+            $loginData = $this->AuthService->login($authDto);
+            return $this->responseOk($loginData);
+        } catch (ValidationException $e) {
+            return $this->response(
+                data: ['errors' => $e->errors()],
+                code: 422
+            );
+        } catch (\Exception $e) {
+            return $this->response(
+                data: ['error' => 'Произошла ошибка при авторизации'],
+                code: 500
+            );
+        }
     }
 
     /**

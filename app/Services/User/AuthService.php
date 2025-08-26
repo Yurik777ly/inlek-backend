@@ -20,7 +20,6 @@ class AuthService
         protected readonly UserService $UserService,
     ) {}
 
-
     /**
      * @param AuthDTO $authDTO
      * @return array
@@ -94,20 +93,33 @@ class AuthService
         }
 
         if (!empty($authDTO->fcm_token)) {
-            $this->UserService->updateFcmToken($authDTO);
-            $user = $this->getUser($authDTO);
+            try {
+                $this->UserService->updateFcmToken($authDTO);
+                $user = $this->getUser($authDTO);
+            } catch (\Exception $e) {
+                \Log::warning('Failed to update FCM token during login', [
+                    'phone' => $authDTO->phone,
+                    'error' => $e->getMessage()
+                ]);
+            }
         }
 
         if (!empty($user->fcm_token)) {
-            FireBase::send(
-                'Авторизация',
-                'Совершен вход в личный кабинет',
-                [$user->fcm_token],
-                []
-            );
+            try {
+                FireBase::send(
+                    'Авторизация',
+                    'Совершен вход в личный кабинет',
+                    [$user->fcm_token],
+                    []
+                );
+            } catch (\Exception $e) {
+                \Log::warning('Failed to send Firebase notification during login', [
+                    'phone' => $authDTO->phone,
+                    'fcm_token' => $user->fcm_token,
+                    'error' => $e->getMessage()
+                ]);
+            }
         }
-
-        //$user->tokens()->delete();
 
         $token = $user->createToken($user->phone);
         return [
