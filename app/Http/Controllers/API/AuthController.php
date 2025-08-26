@@ -234,7 +234,7 @@ class AuthController extends Controller
         $validated = $request->validate([
             'phone' => ['required', 'regex:/^\+375(25|29|33|44)\-\d{3}\-\d{2}\-\d{2}$/'],
             'password' => ['required'],
-            'fcm_token' => ['string']
+            'fcm_token' => ['nullable', 'string']
         ]);
         $authDto = new AuthDTO(
             phone:  $validated['phone'],
