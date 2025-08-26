@@ -15,6 +15,7 @@ use App\Models\EVO\EvoCommerceOrderPayments;
 
 use App\Services\Payment\Bepaid;
 use App\Services\Payment\Oplati;
+use App\Services\Payment\EripExpresspay;
 use App\Services\Pharmacy\PharmacyService;
 
 use App\Services\Cart\CartService;
@@ -235,6 +236,23 @@ class OrderService
             'erip' => null,
             default => null
         };
+        $ulr = '';
+
+        $processor = null;
+        switch($payment_method) {
+            case 'bepaid':
+                $processor = new Bepaid();
+            break;
+            case 'oplati':
+                $processor = new Oplati();
+            break;
+            case 'erip':
+                $processor = new EripExpresspay();
+            break;
+            default:
+                $processor = null;
+            break;
+        }
 
         $this->EvoCommerceOrders->status_id = 2;
         $this->EvoCommerceOrders->save();
@@ -284,17 +302,11 @@ class OrderService
             ->first() : null;
 
         $orders->transform(function($order) use ($firstPharmacy, $orderFields) {
-            $order->pharmacy_name = $firstPharmacy
-                ? $firstPharmacy->pagetitle
-                : null;
+            $order->pharmacy_name = $firstPharmacy?->pagetitle;
 
-            $order->address = $firstPharmacy
-                ? $firstPharmacy->address
-                : null;
+            $order->address = $firstPharmacy?->address;
 
-            $order->pharmacy_id = $firstPharmacy
-                ? $firstPharmacy->pharmacy_id
-                : null;
+            $order->pharmacy_id = $firstPharmacy?->pharmacy_id;
 
             if (!empty($orderFields)) {
                 $order->prices_sum = $orderFields['sum']['pricesSum'] ?? 0; // стоимость товаров со скидкой

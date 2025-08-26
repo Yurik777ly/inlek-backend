@@ -11,55 +11,55 @@ class Oplati extends Payment
     public function __construct()
     {
         $this->settings = [
-            'test' => 1,
-            'shop_id' => '27288',
-            'secret_key' => '2b1554a3d2b476bb14bb31386c301dafe1f0d67a247825683bab0560d09c0aea',
+            'base_url'   => rtrim(env('OPLATI_BASE_URL', ''), '/'),
+            'reg_num'    => env('OPLATI_REGNUM', 'OPL000063995'),
+            'password'   => env('OPLATI_PASSWORD', 'AptekaOnline34'),
+            'pay_base'   => rtrim(env('OPLATI_PAY_BASE', 'https://pay.o-plati.by/order'), '/'),
         ];
     }
 
     public function getPaymentLink($order='', $payment='')
     {
-        $payment->amount = round($payment->amount * 100, 2);
-        $payment->amount = (int) $payment->amount;
+        $amountMinor = (int)round($payment->amount * 100);
 
-        $customer = [
-            'email' => $order->email,
-            'phone' => $order->phone,
+        $payload = [
+            'shift' => '1',
+            'sum' => $amountMinor,
+            'orderNumber' => (string)($order->id . '-' . $payment->id),
+            'details' => [
+                'title' => 'Оплата заказа #' . $order->id,
+                'amountTotal' => $amountMinor,
+                'items' => [
+                    [
+                        'type' => 1,
+                        'name' => 'Заказ #' . $order->id,
+                        'quantity' => 1,
+                        'unit' => 'шт',
+                        'price' => $amountMinor,
+                        'cost' => $amountMinor,
+                    ]
+                ],
+            ],
+            'successUrl' => rtrim(config('app.url'), '/') . '/api/payments/payment-success?token=' . $payment->hash,
+            'failureUrl' => rtrim(config('app.url'), '/') . '/api/payments/payment-failed?token=' . $payment->hash,
+            'notificationUrl' => rtrim(config('app.url'), '/') . '/api/payments/payment-process?token=' . $payment->hash,
         ];
 
-        $data = [
-            'checkout' => [
-                'transaction_type' => 'payment',
-                'test' => $this->settings['test'] == '1',
-                'settings' => [
-                    'return_url'  => config('app.url') . '/api/payments/payment-success?token=' . $payment->hash,
-                    'success_url' => config('app.url') . '/api/payments/payment-success?token=' . $payment->hash,
+        $response = $this->request($payload);
+        if (!$response) {
+            return false;
+        }
 
-                    'decline_url' => config('app.url') . '/api/payments/payment-failed?token=' . $payment->hash,
-                    'fail_url'    => config('app.url') . '/api/payments/payment-failed?token=' . $payment->hash,
-                    'cancel_url'  => config('app.url') . '/api/payments/payment-failed?token=' . $payment->hash,
+        $meta = array_merge($response, ['orderPaymentId' => $payment->id]);
+        $payment->meta = json_encode($meta, JSON_UNESCAPED_UNICODE);
+        $payment->save();
 
-                    'notification_url' => config('app.url') . '/api/payments/payment-process?token=' . $payment->hash,
-                    'language' => "ru",
-                ],
-                'order' => [
-                    'currency' => 'BYN',
-                    'amount' => $payment->amount,
-                    'description' => 'Оплата заказа ' . $order->id,
-                    'tracking_id' => $order->id . '-' . $payment->hash
-                ],
-                'customer' => $customer
-            ]
-        ];
-
-        if ($response = $this->request($data)) {
-            $response = array_merge($response, ['orderPaymentId' => $payment->id]);
-            //update payment
-            $payment->meta = json_encode($response, JSON_UNESCAPED_UNICODE);
-            $payment->save();
-
-            if (isset($response['checkout']['redirect_url'])) {
-                return $response['checkout']['redirect_url'];
+        if (!empty($response['paymentUrl'])) {
+            return $response['paymentUrl'];
+        }
+        if (!empty($response['order']) && !empty($response['order']['id'])) {
+            if (!empty($this->settings['pay_base'])) {
+                return $this->settings['pay_base'] . '/' . $response['order']['id'];
             }
         }
 
@@ -70,8 +70,8 @@ class Oplati extends Payment
     {
         if (!isset($_SERVER['PHP_AUTH_USER'])
             || !isset($_SERVER['PHP_AUTH_PW'])
-            || $_SERVER['PHP_AUTH_USER'] != $this->settings['shop_id']
-            || $_SERVER['PHP_AUTH_PW'] != $this->settings['secret_key']
+            || $_SERVER['PHP_AUTH_USER'] != $this->settings['reg_num']
+            || $_SERVER['PHP_AUTH_PW'] != $this->settings['password']
         ) {
             $this->modx->logEvent(0, 3, 'Notify response can not be authorized', 'Commerce Bepaid Payment');
 
@@ -120,34 +120,31 @@ class Oplati extends Payment
 
     protected function request($data)
     {
-        $ch = curl_init('https://checkout.bepaid.by/ctp/api/checkouts');
+        if (empty($this->settings['base_url']) || empty($this->settings['reg_num']) || empty($this->settings['password'])) {
+            return false;
+        }
+
+        $url = $this->settings['base_url'] . '/pos/webPayments/v2';
+        $ch = curl_init($url);
         curl_setopt($ch, CURLOPT_POST, true);
         curl_setopt($ch, CURLOPT_TIMEOUT, 30);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-
         curl_setopt($ch, CURLOPT_HTTPHEADER, [
             'Content-Type: application/json',
             'Accept: application/json',
-            'Cache-Control: no-cache',
-            'X-API-Version: 2'
+            'regNum: ' . $this->settings['reg_num'],
+            'password: ' . $this->settings['password'],
         ]);
-
-        curl_setopt($ch, CURLOPT_USERPWD, $this->settings['shop_id'] . ':' . $this->settings['secret_key']
-        );
-
-        if ($data) {
-            curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data, JSON_UNESCAPED_UNICODE));
-        }
+        curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data, JSON_UNESCAPED_UNICODE));
 
         $response = curl_exec($ch);
-        $error = curl_error($ch);
-
         curl_close($ch);
 
         if ($response === false) {
             return false;
         }
 
-        return json_decode($response, true);
+        $decoded = json_decode($response, true);
+        return is_array($decoded) ? $decoded : false;
     }
 }
