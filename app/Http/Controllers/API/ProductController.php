@@ -88,19 +88,22 @@ class ProductController extends Controller
             'city' => 'nullable|string',
         ]);
 
+        $lat = $validated['geo_lat'] ?? null;
+        $long = $validated['geo_long'] ?? null;
+
         $productDto = new ProductDTO(
             productId: $id,
             pharmacyId: $validated['pharmacy_id'] ?? null,
             pharmacyAddress: $validated['address'] ?? null,
             pharmacyDelivery: $validated['delivery'] ?? ['Доставка', 'Самовывоз'],
-            geoLat: $validated['geo_lat'] ?? null,
-            geoLong: $validated['geo_long'] ?? null,
+            geoLat: $lat,
+            geoLong: $long,
         );
 
-        if ($validated['geo_lat'] || $validated['geo_long']) {
+        if ($lat || $long) {
             $this->CartService->setUserGeo(
-                $validated['geo_lat'] ?? null,
-                $validated['geo_long'] ?? null
+                $lat,
+                $long,
             );
         }
 
