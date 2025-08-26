@@ -165,9 +165,7 @@ class ProductService
                 return $query->whereExists(function ($subQuery) use ($productDto) {
                     $subQuery->select(DB::raw(1))
                         ->from('evo_category_product_view')
-                        ->where('evo_category_product_view.category_id', $productDto->categoryId)
-                        ->whereRaw('evo_product_info_view_json_opt.product_id = evo_category_product_view.product_id')
-                        ;
+                        ->where('evo_category_product_view.category_id', $productDto->categoryId);
                 });
             })
             ->when($productDto->sortBy == 'price_desc', function($query) use($productDto) {
@@ -185,49 +183,59 @@ class ProductService
         return $priceFilter;
     }
 
-    public function getPharmaciesByProductId(ProductDTO $productDto)//: array|LengthAwarePaginator
+    public function getPharmaciesByProductId(ProductDTO $productDto) //: array|LengthAwarePaginator
     {
-        return $this->ProductPharmacyJson->query()
+        $query = $this->ProductPharmacyJson->query()
+            ->from('evo_product_pharmacy_json as ep')
             ->select([
-                'evo_product_pharmacy_json.product_id',
-                'evo_product_info_view_json_opt_noact.is_recipe',
-                'evo_product_info_view_json_opt_noact.is_alcohol',
-                'evo_product_pharmacy_json.product_pharmacy_json'
+                'ep.product_id',
+                'info.is_recipe',
+                'info.is_alcohol',
+                'ep.product_pharmacy_json',
+                'ep.pharmacy_id',
+                'ep.pharmacy_delivery',
             ])
             ->join(
-                'evo_product_info_view_json_opt_noact',
-                'evo_product_pharmacy_json.product_id',
+                'evo_product_info_view_json_opt_noact as info',
+                'ep.product_id',
                 '=',
-                'evo_product_info_view_json_opt_noact.product_id'
+                'info.product_id'
             )
-            ->where('evo_product_pharmacy_json.product_id', $productDto->productId)
-            ->when(!empty($productDto->pharmacyId), function($query) use($productDto) {
-                return $query->where('pharmacy_id', $productDto->pharmacyId);
+            ->where('ep.product_id', $productDto->productId)
+            ->when(!empty($productDto->pharmacyId), function ($q) use ($productDto) {
+                return $q->where('ep.pharmacy_id', $productDto->pharmacyId);
             })
-            ->when(!empty($productDto->pharmacyDelivery), function($query) use($productDto) {
-                return $query
-                    ->whereIn('evo_product_info_view_json_opt_noact.delivery', $productDto->pharmacyDelivery)
-                    ->whereIn('evo_product_pharmacy_json.pharmacy_delivery', $productDto->pharmacyDelivery);
+            ->when(!empty($productDto->pharmacyDelivery), function ($q) use ($productDto) {
+                return $q
+                    ->whereIn('info.delivery', $productDto->pharmacyDelivery)
+                    ->whereIn('ep.pharmacy_delivery', $productDto->pharmacyDelivery);
             })
-            ->when(!empty($productDto->pharmacyAddress), function($query) use($productDto) {
-                return $query->whereRaw(
-                    "LOWER(JSON_UNQUOTE(JSON_EXTRACT(product_pharmacy_json, '$.address'))) LIKE ?",
+            ->when(!empty($productDto->pharmacyAddress), function ($q) use ($productDto) {
+                return $q->whereRaw(
+                    "LOWER(JSON_UNQUOTE(JSON_EXTRACT(ep.product_pharmacy_json, '$.address'))) LIKE ?",
                     ['%' . strtolower($productDto->pharmacyAddress) . '%']
                 );
-            })
-            ->get();
-    }
+            });
 
-    private function haversineDistance(float $lat1, float $lon1, float $lat2, float $lon2): float
-    {
-        $earthRadius = 6371000;
-        $dLat = deg2rad($lat2 - $lat1);
-        $dLon = deg2rad($lon2 - $lon1);
-        $a = sin($dLat / 2) ** 2
-            + cos(deg2rad($lat1)) * cos(deg2rad($lat2))
-            * sin($dLon / 2) ** 2;
-        $c = 2 * atan2(sqrt($a), sqrt(1 - $a));
+        $distanceSql = "
+            (6371 * acos(
+                cos(radians(?)) *
+                cos(radians(CAST(TRIM(SUBSTRING_INDEX(REPLACE(ep.coordinates, ' ', ''), ',', 1)) AS DECIMAL(10,6)))) *
+                cos(radians(CAST(TRIM(SUBSTRING_INDEX(REPLACE(ep.coordinates, ' ', ''), ',', -1)) AS DECIMAL(10,6))) - radians(?))
+                +
+                sin(radians(?)) *
+                sin(radians(CAST(TRIM(SUBSTRING_INDEX(REPLACE(ep.coordinates, ' ', ''), ',', 1)) AS DECIMAL(10,6))))
+            )) AS distance_km
+        ";
 
-        return $earthRadius * $c;
+        $query->selectRaw($distanceSql, [
+            $productDto->geoLat,
+            $productDto->geoLong,
+            $productDto->geoLat
+        ]);
+
+        $query->orderByRaw('distance_km ASC');
+
+        return $query->get();
     }
 }
