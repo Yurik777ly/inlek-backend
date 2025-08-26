@@ -21,21 +21,23 @@ class OrderController extends Controller
         $validator = Validator::make($request->all(), [
             'delivery' => 'required|string|in:self,delivery',
             'delivery_zone' => 'string|in:yellow,green',
-            'payment' => 'required|string',
+            'payment' => 'required|string|in:cash,bepaid,oplati,erip',
             'pharmacy_id' => 'required|int',
             'last_name' => 'required|string|max:255',
             'first_name' => 'required|string|max:255',
             'phone' => 'required|string|max:20',
-            'email' => 'required_if:delivery_method,delivery|nullable|email|max:255',
-            'city' => 'required_if:delivery_method,delivery|nullable|max:255',
-            'address' => 'required_if:delivery_method,delivery|nullable|max:255',
+            'email' => 'required_if:delivery,delivery|nullable|email|max:255',
+            'city' => 'required_if:delivery,delivery|nullable|max:255',
+            'address' => 'required_if:delivery,delivery|nullable|max:255',
             'entrance' => 'nullable|string|max:10',
             'floor' => 'nullable|string|max:10',
             'apartment' => 'nullable|string|max:10',
             'intercom' => 'nullable|string|max:20',
             'comment' => 'nullable|string|max:1000',
-            'ids' => 'array',
-            'promocodes' => 'array', // Проверка каждого элемента
+            'ids' => 'required|array|min:1',
+            'ids.*' => 'integer|exists:products,id',
+            'promocodes' => 'nullable|array',
+            'promocodes.*' => 'string|max:50',
         ]);
 
         if ($validator->fails()) {
@@ -48,7 +50,12 @@ class OrderController extends Controller
         // Создание заказа
         $data = $this->OrderService->create($validator->validated());
 
-        return $this->responseOk($data);
+        if (!$data) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Не удалось создать заказ. Проверьте корзину.'
+            ], 400);
+        }
 
         return response()->json([
             'data' => $data,
@@ -157,10 +164,9 @@ class OrderController extends Controller
     public function paymentStatus(Request $request): JsonResponse
     {
         return $this->responseOk([
-            'erip' => env('erip', '0'),
-            'bepaid' => env('bepaid', '0'),
-            'oplati' => env('oplati', '0'),
+            'erip' => env('ERIP_ENABLED', '0'),
+            'bepaid' => env('BEPAID_ENABLED', '0'),
+            'oplati' => env('OPLATI_ENABLED', '0'),
         ]);
     }
-
 }

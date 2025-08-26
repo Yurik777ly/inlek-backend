@@ -21,8 +21,6 @@ use App\Services\Cart\CartService;
 use App\Http\Dto\Cart\CartDTO;
 use App\Http\Dto\Cart\CartDetailedDTO;
 
-
-
 const INACTIVE_STATUSES = [
     'Отменен',
     'Получен',
@@ -76,55 +74,50 @@ class OrderService
 
     public function create($orderArray)
     {
-
-            auth()->user()->update(
-                [
-                    'phone' => $orderArray['phone'],
-                    'first_name' => $orderArray['last_name'],
-                    'last_name' => $orderArray['first_name'],
-                    'email' => $orderArray['email'],
-                ]
-            );
+        auth()->user()->update([
+            'phone' => $orderArray['phone'],
+            'first_name' => $orderArray['first_name'],
+            'last_name' => $orderArray['last_name'],
+            'email' => $orderArray['email'] ?? null,
+        ]);
 
         $delivery_method = $orderArray['delivery'];
         $delivery_method_title = ($orderArray['delivery'] == 'self') ? "Самовывоз" : "Доставка";
+
         $payment_method = $orderArray['payment'];
-        $payment_method_title = ($orderArray['delivery'] == 'cash') ? "При получении" : $payment_method;
+        $payment_method_title = match($orderArray['payment']) {
+            'cash' => "При получении",
+            'bepaid' => "Bepaid (Банковская карта)",
+            'oplati' => "Oplati",
+            'erip' => "ЕРИП",
+            default => $orderArray['payment']
+        };
 
         $orderArray['pharmacy_id'] = ($orderArray['pharmacy_id'] == 0) ? 6864 : $orderArray['pharmacy_id'];
-
-        //$products = $this->CartService->getCart();
-
 
         $cartDTO = new CartDetailedDTO(
             pharmacyId: $orderArray['pharmacy_id'],
             deliveryZone: $orderArray['delivery_zone'] ?? null,
-            promocodes: ''
+            promocodes: implode(',', $orderArray['promocodes'] ?? [])
         );
 
         $this->CartService->setUserGeo('', '');
-
         $products = $this->CartService->getCartDetailed($cartDTO);
 
         if(empty($products)) return false;
 
-
         $position = 1;
-        $cartProducts = [];
-
         $sum = 0;
         $oldsum = 0;
-
-
         $orderProducts = [];
+
         foreach ($products['cart']['products'] as $product) {
             $cartProduct = $product['product_info'];
             if (in_array($product['product_id'], $orderArray['ids'])) {
-
-                $price =     (float)$product['product_totals']['total'];
+                $price = (float)$product['product_totals']['total'];
                 $price_old = (float)$product['product_totals']['total_old'] ?? 0;
                 $sum += $price * $product['quantity'];
-                $oldsum+= ($price_old > 0) ? $price_old*$product['quantity'] : $price*$product['quantity'];
+                $oldsum += ($price_old > 0) ? $price_old * $product['quantity'] : $price * $product['quantity'];
 
                 $orderProducts[$position-1] = [
                     'product_id' => $product['product_id'],
@@ -139,12 +132,12 @@ class OrderService
             }
         }
 
+        // Расчет стоимости доставки
         $deliverySum = 0;
         if ($delivery_method == 'delivery' && !empty($orderArray['delivery_zone'])) {
             if ($orderArray['delivery_zone'] == 'yellow') {
                 $deliverySum = 8;
-            }
-            else if ($orderArray['delivery_zone'] == 'green') {
+            } else if ($orderArray['delivery_zone'] == 'green') {
                 if ($oldsum >= 40) {
                     $deliverySum = 0;
                 } else {
@@ -153,71 +146,72 @@ class OrderService
             }
         }
 
-            $fields = json_encode([
-                "comment" => $orderArray['comment'] ?? '',
-                "agree" => true,
+        $totalSum = $sum + $deliverySum;
+
+        // Расширенный JSON с полями
+        $fields = json_encode([
+            "comment" => $orderArray['comment'] ?? '',
+            "agree" => true,
+            "city" => $orderArray['city'] ?? '',
+            "street" => $orderArray['address'] ?? '',
+            "entrance" => $orderArray['entrance'] ?? '',
+            "floor" => $orderArray['floor'] ?? '',
+            "apartment" => $orderArray['apartment'] ?? '',
+            "intercom" => $orderArray['intercom'] ?? '',
+            "delivery" => [
+                "id" => $delivery_method,
+                "title" => $delivery_method_title,
                 "city" => $orderArray['city'] ?? '',
                 "street" => $orderArray['address'] ?? '',
-                "entrance"=> $orderArray['entrance'] ?? '',
-                "floor"=> $orderArray['floor'] ?? '',
-                "apartment"=> $orderArray['apartment'] ?? '',
-                "delivery" => [
-                    "id"=>$delivery_method,
-                    "title"=>$delivery_method_title,
-                    "city" => $orderArray['city'] ?? '',
-                    "street" => $orderArray['address'] ?? '',
-                    "entrance"=> $orderArray['entrance'] ?? '',
-                    "floor"=> $orderArray['floor'] ?? '',
-                    "apartment"=> $orderArray['apartment'] ?? '',
-                ],
-                'orderData' => [
-                    "delivery" => [
-                        "id"=>$delivery_method,
-                        "title"=>$delivery_method_title,
-                        "city" => $orderArray['city'] ?? '',
-                        "street" => $orderArray['address'] ?? '',
-                        "entrance"=> $orderArray['entrance'] ?? '',
-                        "floor"=> $orderArray['floor'] ?? '',
-                        "apartment"=> $orderArray['apartment'] ?? '',
-                    ],
-                ],
-                "payment" => ["id"=>$payment_method,"title"=>$payment_method_title,"caption"=>""],
-                "sum" => [
-                    "pricesSum" => $sum,    //стоимость товаров со скидкой
-                    "oldPricesSum" => $oldsum, //стоимость товаров без скидки
-                    "oldPricesSaleSum" => ($oldsum > 0) ? round((1 - $sum/$oldsum)*100,2) : 0, //скидка
-                    "deliverySum" => $deliverySum, //доставка
-                    "totalSum" => $oldsum + $deliverySum // итого
-                ],
-                "delivery_method" => $delivery_method,
-                "delivery_method_title" => $delivery_method_title,
-                "payment_method" => $payment_method,
-                "payment_method_title" => $payment_method_title
-            ]);
+                "entrance" => $orderArray['entrance'] ?? '',
+                "floor" => $orderArray['floor'] ?? '',
+                "apartment" => $orderArray['apartment'] ?? '',
+                "intercom" => $orderArray['intercom'] ?? '',
+            ],
+            "payment" => [
+                "id" => $payment_method,
+                "title" => $payment_method_title,
+                "caption" => ""
+            ],
+            "promocodes" => $orderArray['promocodes'] ?? [],
+            "sum" => [
+                "pricesSum" => $sum,
+                "oldPricesSum" => $oldsum,
+                "oldPricesSaleSum" => ($oldsum > 0) ? round((1 - $sum/$oldsum)*100, 2) : 0,
+                "deliverySum" => $deliverySum,
+                "totalSum" => $totalSum
+            ],
+            "delivery_method" => $delivery_method,
+            "delivery_method_title" => $delivery_method_title,
+            "payment_method" => $payment_method,
+            "payment_method_title" => $payment_method_title
+        ]);
 
+        // Создание заказа
         $this->EvoCommerceOrders->customer_id = auth()->user()->id;
         $this->EvoCommerceOrders->name = $orderArray['first_name'] . ' ' . $orderArray['last_name'];
         $this->EvoCommerceOrders->phone = $orderArray['phone'];
-        $this->EvoCommerceOrders->email = $orderArray['email'];
+        $this->EvoCommerceOrders->email = $orderArray['email'] ?? '';
         $this->EvoCommerceOrders->hash = $this->generateUniqueHash();
         $this->EvoCommerceOrders->status_id = 1;
         $this->EvoCommerceOrders->fields = $fields;
         $this->EvoCommerceOrders->lang = 'russian-UTF8';
         $this->EvoCommerceOrders->currency = 'BYN';
-        $this->EvoCommerceOrders->amount = $oldsum;
+        $this->EvoCommerceOrders->amount = $totalSum;
 
         $this->EvoCommerceOrders->save();
-        $order_id =  $this->EvoCommerceOrders->id;
+        $order_id = $this->EvoCommerceOrders->id;
 
-
+        // Сохранение продуктов заказа
         foreach($orderProducts as $orderProduct) {
-                $orderProduct['order_id'] = $order_id;
-                $productObj = app()->make(EvoCommerceOrderProducts::class);
-                $productObj->fill($orderProduct)->save(); // Заполнение + сохранение
-                unset($productObj);
-                auth()->user()->cart->products()->detach($orderProduct['product_id']);
+            $orderProduct['order_id'] = $order_id;
+            $productObj = app()->make(EvoCommerceOrderProducts::class);
+            $productObj->fill($orderProduct)->save();
+            unset($productObj);
+            auth()->user()->cart->products()->detach($orderProduct['product_id']);
         }
 
+        // История заказа
         $this->EvoCommerceOrderHistory->order_id = $order_id;
         $this->EvoCommerceOrderHistory->status_id = 1;
         $this->EvoCommerceOrderHistory->comment = '';
@@ -226,70 +220,42 @@ class OrderService
         $this->EvoCommerceOrderHistory->created_at = date('Y-m-d H:i:s');
         $this->EvoCommerceOrderHistory->save();
 
-
+        // Платеж
         $this->EvoCommerceOrderPayments->order_id = $order_id;
-        $this->EvoCommerceOrderPayments->amount = $oldsum + $deliverySum;
+        $this->EvoCommerceOrderPayments->amount = $totalSum;
         $this->EvoCommerceOrderPayments->hash = $this->generateUniqueHash();
         $this->EvoCommerceOrderPayments->payment_method = $payment_method;
         $this->EvoCommerceOrderPayments->meta = '{}';
         $this->EvoCommerceOrderPayments->save();
 
-        $ulr = '';
-
-        $processor = null;
-        switch($payment_method) {
-            case 'bepaid':
-                $processor = new Bepaid();
-            break;
-            case 'oplati':
-                $processor = new Oplati();
-            break;
-            default:
-                $processor = null;
-            break;
-        }
+        // Обработка платежей
+        $processor = match($payment_method) {
+            'bepaid' => new Bepaid(),
+            'oplati' => new Oplati(),
+            'erip' => null,
+            default => null
+        };
 
         $this->EvoCommerceOrders->status_id = 2;
         $this->EvoCommerceOrders->save();
 
-        $data = [];
-
-        $data['order_id'] = $order_id;
-        $data['created_at'] = $this->EvoCommerceOrderHistory->created_at;
-        $data['user_id'] = auth()->user()->id;
-        $data['delivery_method'] = $delivery_method;
-        $data['payment_method'] = $payment_method;
-        $data['city'] = $orderArray['city']  ?? '';
-        $data['address'] = $orderArray['address'] ?? '';
-        if(!empty($data['address'])) {
-            $orderArray['entrance']     = empty($orderArray['entrance'])    ? '':' подъезд '.$orderArray['entrance'];
-            $orderArray['floor']        = empty($orderArray['floor'])       ? '':' этаж '.$orderArray['floor'];
-            $orderArray['apartment']    = empty($orderArray['apartment'])   ? '':' квартира '.$orderArray['apartment'];
-            $orderArray['intercom']     = empty($orderArray['intercom'])    ? '':' домофон '.$orderArray['intercom'];
-
-            $data['address'] .= $orderArray['entrance'];
-            $data['address'] .= $orderArray['floor'];
-            $data['address'] .= $orderArray['apartment'];
-            $data['address'] .= $orderArray['intercom'];
-        }
+        // Формирование ответа
+        $data = [
+            'order_id' => $order_id,
+            'created_at' => $this->EvoCommerceOrderHistory->created_at,
+            'user_id' => auth()->user()->id,
+            'delivery_method' => $delivery_method,
+            'payment_method' => $payment_method,
+            'city' => $orderArray['city'] ?? '',
+            'address' => $this->buildFullAddress($orderArray),
+        ];
 
         $pharmacy_id = ($orderArray['pharmacy_id'] == 0) ? 6864 : $orderArray['pharmacy_id'];
         $data['pharmacy'] = $this->PharmacyService->getPharmacyById($pharmacy_id);
 
-
-        if(!$processor) {
-            $data['link'] = '';
-        } else {
-            $data['link'] = $processor->getPaymentLink($this->EvoCommerceOrders, $this->EvoCommerceOrderPayments);
-        }
+        $data['link'] = $processor ? $processor->getPaymentLink($this->EvoCommerceOrders, $this->EvoCommerceOrderPayments) : '';
 
         return $data;
-
-
-/*
-    "city":"Минск",
-    "address": "Хрущева"
-*/
     }
 
     public function getDetailed(string $userId, int $orderId)
@@ -423,4 +389,35 @@ class OrderService
     }
 
 
+    /**
+     * Построение полного адреса
+     */
+    private function buildFullAddress(array $orderArray): string
+    {
+        if (empty($orderArray['address'])) {
+            return '';
+        }
+
+        $address = $orderArray['address'];
+        $addressParts = [];
+
+        if (!empty($orderArray['entrance'])) {
+            $addressParts[] = 'подъезд ' . $orderArray['entrance'];
+        }
+        if (!empty($orderArray['floor'])) {
+            $addressParts[] = 'этаж ' . $orderArray['floor'];
+        }
+        if (!empty($orderArray['apartment'])) {
+            $addressParts[] = 'квартира ' . $orderArray['apartment'];
+        }
+        if (!empty($orderArray['intercom'])) {
+            $addressParts[] = 'домофон ' . $orderArray['intercom'];
+        }
+
+        if (!empty($addressParts)) {
+            $address .= ' (' . implode(', ', $addressParts) . ')';
+        }
+
+        return $address;
+    }
 }
