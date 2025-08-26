@@ -93,14 +93,14 @@ class ProductController extends Controller
             pharmacyId: $validated['pharmacy_id'] ?? null,
             pharmacyAddress: $validated['address'] ?? null,
             pharmacyDelivery: $validated['delivery'] ?? ['Доставка', 'Самовывоз'],
-            geoLat: $validated['geo_lat'],
-            geoLong: $validated['geo_long'],
+            geoLat: $validated['geo_lat'] ?? null,
+            geoLong: $validated['geo_long'] ?? null,
         );
 
         if ($validated['geo_lat'] || $validated['geo_long']) {
             $this->CartService->setUserGeo(
-                $validated['geo_lat'],
-                $validated['geo_long']
+                $validated['geo_lat'] ?? null,
+                $validated['geo_long'] ?? null
             );
         }
 
