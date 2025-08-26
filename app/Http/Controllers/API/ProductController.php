@@ -80,8 +80,8 @@ class ProductController extends Controller
     public function getPharmaciesByProductId(Request $request, int $id): JsonResponse
     {
         $validated = $request->validate([
-            'geo_lat' => ['required', 'numeric'],
-            'geo_long' => ['required', 'numeric'],
+            'geo_lat' => ['nullable', 'numeric'],
+            'geo_long' => ['nullable', 'numeric'],
             'delivery' => 'nullable|array',
             'pharmacy_id' => 'nullable|int',
             'address' => 'nullable|string',
@@ -97,10 +97,13 @@ class ProductController extends Controller
             geoLong: $validated['geo_long'],
         );
 
-        $this->CartService->setUserGeo(
-            $validated['geo_lat'],
-            $validated['geo_long']
-        );
+        if ($validated['geo_lat'] || $validated['geo_long']) {
+            $this->CartService->setUserGeo(
+                $validated['geo_lat'],
+                $validated['geo_long']
+            );
+        }
+
         $products = $this->ProductService->getPharmaciesByProductId($productDto);
         return $this->responseOk(data: $products);
     }
