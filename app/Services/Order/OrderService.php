@@ -133,6 +133,18 @@ class OrderService
             }
         }
 
+        // Расчет скидки по промокодам
+        $promocodesDiscount = 0;
+        if (!empty($orderArray['promocodes']) && isset($products['cart']['promocodes_info'])) {
+            $promocodesDiscount = (float)($products['cart']['promocodes_info']['total_discount'] ?? 0);
+        } elseif (!empty($orderArray['promocodes']) && isset($products['cart']['totals']['promocodes_discount'])) {
+            // Альтернативный путь, если промокоды хранятся в totals
+            $promocodesDiscount = (float)($products['cart']['totals']['promocodes_discount'] ?? 0);
+        } elseif (!empty($orderArray['promocodes']) && isset($products['promocodes_discount'])) {
+            // Еще один возможный путь
+            $promocodesDiscount = (float)($products['promocodes_discount'] ?? 0);
+        }
+
         // Расчет стоимости доставки
         $deliverySum = 0;
         if ($delivery_method == 'delivery' && !empty($orderArray['delivery_zone'])) {
@@ -147,7 +159,8 @@ class OrderService
             }
         }
 
-        $totalSum = $sum + $deliverySum;
+        // Итоговая сумма с учетом промокодов
+        $totalSum = $sum + $deliverySum - $promocodesDiscount;
 
         // Расширенный JSON с полями
         $fields = json_encode([
@@ -179,6 +192,7 @@ class OrderService
                 "pricesSum" => $sum,
                 "oldPricesSum" => $oldsum,
                 "oldPricesSaleSum" => ($oldsum > 0) ? round((1 - $sum/$oldsum)*100, 2) : 0,
+                "promocodesDiscount" => $promocodesDiscount,
                 "deliverySum" => $deliverySum,
                 "totalSum" => $totalSum
             ],
@@ -290,7 +304,7 @@ class OrderService
             'old_prices_sale_sum' => ($oldsum > 0) ? round((1 - $sum/$oldsum)*100, 2) : 0,
             'delivery_sum' => $deliverySum,
             'total_sum' => $totalSum,
-            'promocodes_discount' => 0,
+            'promocodes_discount' => $promocodesDiscount,
             'comment' => $orderArray['comment'] ?? '',
             'delivery_method' => $delivery_method,
             'delivery_method_title' => $delivery_method_title,
@@ -300,7 +314,7 @@ class OrderService
             'has_discount' => ($oldsum > $sum),
             'discount_amount' => $oldsum - $sum,
             'is_delivery' => ($deliverySum > 0),
-            'has_promocodes' => false,
+            'has_promocodes' => ($promocodesDiscount > 0),
         ];
 
         $response = [
