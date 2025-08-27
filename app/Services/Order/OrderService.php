@@ -122,7 +122,7 @@ class OrderService
 
                 $orderProducts[$position-1] = [
                     'product_id' => $product['product_id'],
-                    'title' => $cartProduct['pagetitle'],
+                    'title' => $cartProduct->pagetitle ?? 'Unknown Product',
                     'price' => $price,
                     'count' => $product['quantity'],
                     'options' => "{\"pharmacy_id\":{$orderArray['pharmacy_id']},\"iscancellations\":false,\"number_1c\":0,\"price\":{$price},\"price_old\":{$price_old}}",
