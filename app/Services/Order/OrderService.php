@@ -271,7 +271,7 @@ class OrderService
         $pharmacy_id = ($orderArray['pharmacy_id'] == 0) ? 6864 : $orderArray['pharmacy_id'];
         $data['pharmacy'] = $this->PharmacyService->getPharmacyById($pharmacy_id);
 
-        $data['link'] = $processor ? $processor->getPaymentLink($this->EvoCommerceOrders, $this->EvoCommerceOrderPayments) : '';
+        $data['link'] = $processor ? $processor->getPaymentLink($this->EvoCommerceOrders, $this->EvoCommerceOrderPayments) : null;
 
         return $data;
     }
