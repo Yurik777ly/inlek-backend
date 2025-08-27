@@ -250,7 +250,15 @@ class OrderService
         $this->EvoCommerceOrders->save();
 
         // Получаем информацию об аптеке
-        $pharmacy = $this->PharmacyService->getPharmacyById($orderArray['pharmacy_id']);
+        $pharmacyData = $this->PharmacyService->getPharmacyById($orderArray['pharmacy_id']);
+        $pharmacy = null;
+        if (is_array($pharmacyData) && !empty($pharmacyData)) {
+            $pharmacy = (object)$pharmacyData[0];
+        } elseif (is_object($pharmacyData) && method_exists($pharmacyData, 'first')) {
+            $pharmacy = $pharmacyData->first();
+        } elseif (is_object($pharmacyData)) {
+            $pharmacy = $pharmacyData;
+        }
 
         // Полный адрес доставки
         $fullDeliveryAddress = null;
@@ -273,7 +281,7 @@ class OrderService
             'email' => $orderArray['email'] ?? '',
             'status_title' => 'Обработка',
             'created_at' => $this->EvoCommerceOrderHistory->created_at,
-            'pharmacy_name' => $pharmacy->pagetitle ?? null,
+            'pharmacy_name' => $pharmacy->pagetitle ?? 'Unknown Pharmacy',
             'pharmacy_id' => $pharmacy->pharmacy_id ?? null,
             'address' => $pharmacy->address ?? null,
             'order_products_json' => $orderProducts,
@@ -348,12 +356,20 @@ class OrderService
             ->filter()
             ->first();
 
-        $firstPharmacy = $firstPharmacyId ? DB::table('evo_pharmacies_view')
-            ->where('pharmacy_id', $firstPharmacyId)
-            ->first() : null;
+        $firstPharmacy = null;
+        if ($firstPharmacyId) {
+            try {
+                $firstPharmacy = DB::table('evo_pharmacies_view')
+                    ->where('pharmacy_id', $firstPharmacyId)
+                    ->first();
+            } catch (\Exception $e) {
+                // Если таблица не существует или нет доступа, используем null
+                $firstPharmacy = null;
+            }
+        }
 
         $orders->transform(function($order) use ($firstPharmacy, $orderFields) {
-            $order->pharmacy_name = $firstPharmacy?->pagetitle;
+            $order->pharmacy_name = $firstPharmacy?->pagetitle ?? 'Unknown Pharmacy';
 
             $order->address = $firstPharmacy?->address;
 
