@@ -35,7 +35,7 @@ class OrderController extends Controller
             'intercom' => 'nullable|string|max:20',
             'comment' => 'nullable|string|max:1000',
             'ids' => 'required|array|min:1',
-            'ids.*' => 'integer|exists:products,id',
+            'ids.*' => 'integer',
             'promocodes' => 'nullable|array',
             'promocodes.*' => 'string|max:50',
         ]);

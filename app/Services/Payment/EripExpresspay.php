@@ -73,7 +73,7 @@ class EripExpresspay extends Payment
             return $base . $data['InvoiceNo'];
         }
 
-        return false;
+        return null;;
     }
 
     protected function sendRequestPOST(array $params): bool|string

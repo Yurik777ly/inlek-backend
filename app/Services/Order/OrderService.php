@@ -230,14 +230,6 @@ class OrderService
         $this->EvoCommerceOrderPayments->save();
 
         // Обработка платежей
-        $processor = match($payment_method) {
-            'bepaid' => new Bepaid(),
-            'oplati' => new Oplati(),
-            'erip' => null,
-            default => null
-        };
-        $ulr = '';
-
         $processor = null;
         switch($payment_method) {
             case 'bepaid':
@@ -257,23 +249,82 @@ class OrderService
         $this->EvoCommerceOrders->status_id = 2;
         $this->EvoCommerceOrders->save();
 
-        // Формирование ответа
-        $data = [
+        // Получаем информацию об аптеке
+        $pharmacy = $this->PharmacyService->getPharmacyById($orderArray['pharmacy_id']);
+
+        // Полный адрес доставки
+        $fullDeliveryAddress = null;
+        if ($delivery_method == 'delivery') {
+            $addressParts = [];
+            if (!empty($orderArray['city'])) $addressParts[] = $orderArray['city'];
+            if (!empty($orderArray['address'])) $addressParts[] = $orderArray['address'];
+            if (!empty($orderArray['entrance'])) $addressParts[] = 'подъезд ' . $orderArray['entrance'];
+            if (!empty($orderArray['floor'])) $addressParts[] = 'этаж ' . $orderArray['floor'];
+            if (!empty($orderArray['apartment'])) $addressParts[] = 'кв. ' . $orderArray['apartment'];
+            $fullDeliveryAddress = !empty($addressParts) ? implode(', ', $addressParts) : null;
+        }
+
+        // Формирование ответа в том же формате, что и getDetailed
+        $orderData = (object)[
             'order_id' => $order_id,
+            'customer_id' => auth()->user()->id,
+            'name' => $orderArray['first_name'] . ' ' . $orderArray['last_name'],
+            'phone' => $orderArray['phone'],
+            'email' => $orderArray['email'] ?? '',
+            'status_title' => 'Обработка',
             'created_at' => $this->EvoCommerceOrderHistory->created_at,
-            'user_id' => auth()->user()->id,
+            'pharmacy_name' => $pharmacy->pagetitle ?? null,
+            'pharmacy_id' => $pharmacy->pharmacy_id ?? null,
+            'address' => $pharmacy->address ?? null,
+            'order_products_json' => $orderProducts,
+            'prices_sum' => $sum,
+            'old_prices_sum' => $oldsum,
+            'old_prices_sale_sum' => ($oldsum > 0) ? round((1 - $sum/$oldsum)*100, 2) : 0,
+            'delivery_sum' => $deliverySum,
+            'total_sum' => $totalSum,
+            'promocodes_discount' => 0,
+            'comment' => $orderArray['comment'] ?? '',
             'delivery_method' => $delivery_method,
+            'delivery_method_title' => $delivery_method_title,
+            'full_delivery_address' => $fullDeliveryAddress,
             'payment_method' => $payment_method,
-            'city' => $orderArray['city'] ?? '',
-            'address' => $this->buildFullAddress($orderArray),
+            'payment_method_title' => $payment_method_title,
+            'has_discount' => ($oldsum > $sum),
+            'discount_amount' => $oldsum - $sum,
+            'is_delivery' => ($deliverySum > 0),
+            'has_promocodes' => false,
         ];
 
-        $pharmacy_id = ($orderArray['pharmacy_id'] == 0) ? 6864 : $orderArray['pharmacy_id'];
-        $data['pharmacy'] = $this->PharmacyService->getPharmacyById($pharmacy_id);
+        $response = [
+            'order' => $orderData,
+            'summary' => [
+                'products_price' => $orderData->prices_sum,
+                'products_price_old' => $orderData->old_prices_sum,
+                'discount_percent' => $orderData->old_prices_sale_sum,
+                'discount_amount' => $orderData->discount_amount,
+                'promocodes_discount' => $orderData->promocodes_discount,
+                'delivery_price' => $orderData->delivery_sum,
+                'total_price' => $orderData->total_sum,
+            ],
+            'delivery_info' => [
+                'method' => $orderData->delivery_method,
+                'method_title' => $orderData->delivery_method_title,
+                'address' => $orderData->full_delivery_address,
+                'is_delivery' => $orderData->is_delivery,
+            ],
+            'payment_info' => [
+                'method' => $orderData->payment_method,
+                'method_title' => $orderData->payment_method_title,
+            ],
+            'additional' => [
+                'comment' => $orderData->comment,
+                'has_discount' => $orderData->has_discount,
+                'has_promocodes' => $orderData->has_promocodes,
+                'payment_link' => $processor ? $processor->getPaymentLink($this->EvoCommerceOrders, $this->EvoCommerceOrderPayments) : null
+            ]
+        ];
 
-        $data['link'] = $processor ? $processor->getPaymentLink($this->EvoCommerceOrders, $this->EvoCommerceOrderPayments) : '';
-
-        return $data;
+        return $response;
     }
 
     public function getDetailed(string $userId, int $orderId)
