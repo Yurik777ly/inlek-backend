@@ -11,7 +11,7 @@ class Oplati extends Payment
     public function __construct()
     {
         $this->settings = [
-            'base_url'   => rtrim(env('OPLATI_BASE_URL', ''), 'https://api.o-plati.by'),
+            'base_url'   => env('OPLATI_BASE_URL', 'https://cashboxapi.o-plati.by/ms-pay'),
             'reg_num'    => env('OPLATI_REGNUM', 'OPL000063995'),
             'password'   => env('OPLATI_PASSWORD', 'AptekaOnline34'),
             'pay_base'   => rtrim(env('OPLATI_PAY_BASE', 'https://pay.o-plati.by/order'), '/'),
