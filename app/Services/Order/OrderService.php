@@ -5,6 +5,7 @@ namespace App\Services\Order;
 use App\Models\User;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use App\Models\OrderView;
 use App\Models\OrderViewJson;
 use App\Models\EVO\EvoCommerceOrderStatuses;
@@ -21,6 +22,7 @@ use App\Services\Pharmacy\PharmacyService;
 use App\Services\Cart\CartService;
 use App\Http\Dto\Cart\CartDTO;
 use App\Http\Dto\Cart\CartDetailedDTO;
+use App\Models\ProductInfoViewJson;
 
 const INACTIVE_STATUSES = [
     'Отменен',
@@ -43,6 +45,7 @@ const SELF_GET_TITLES = [
 
 class OrderService
 {
+    private array $productCache = [];
 
     public function __construct(
         protected readonly User $User,
@@ -54,26 +57,76 @@ class OrderService
         protected readonly EvoCommerceOrderHistory $EvoCommerceOrderHistory,
         protected readonly EvoCommerceOrderPayments $EvoCommerceOrderPayments,
         protected readonly PharmacyService $PharmacyService,
+        protected readonly ProductInfoViewJson $ProductInfoViewJson,
     ) {}
 
-
-    public function generateUniqueHash() {
+    public function generateUniqueHash(): string
+    {
         $data = random_bytes(16);
         $data[6] = chr(ord($data[6]) & 0x0f | 0x40);
         $data[8] = chr(ord($data[8]) & 0x3f | 0x80);
         return vsprintf('%s%s%s%s%s%s%s%s', str_split(bin2hex($data), 4));
     }
 
-    public function pay($payhash)
+    public function pay($payhash): bool
     {
-        $payment = $this->EvoCommerceOrderPayments->query()->where('hash', $payhash)->first();
-        if($payment) {
-            $payment->paid = 1;
-            $payment->save();
+        try {
+            $payment = $this->EvoCommerceOrderPayments->query()->where('hash', $payhash)->first();
+            if ($payment) {
+                $payment->paid = 1;
+                $payment->save();
+                return true;
+            }
+        } catch (\Exception $e) {
+            Log::error('Payment processing failed', ['hash' => $payhash, 'error' => $e->getMessage()]);
         }
+        return false;
     }
 
     public function create($orderArray)
+    {
+        try {
+            return DB::transaction(function () use ($orderArray) {
+                // Обновляем информацию о пользователе
+                $this->updateUserInfo($orderArray);
+
+                // Получаем данные корзины
+                $cartData = $this->getCartData($orderArray);
+                if (empty($cartData['products'])) {
+                    return false;
+                }
+
+                // Рассчитываем суммы заказа
+                $orderCalculations = $this->calculateOrderTotals($cartData, $orderArray);
+
+                // Создаем заказ
+                $orderId = $this->createOrder($orderArray, $orderCalculations);
+
+                // Сохраняем товары заказа
+                $this->saveOrderProducts($orderId, $cartData['orderProducts'], $orderArray['pharmacy_id']);
+
+                // Очищаем корзину
+                $this->clearCartProducts(array_column($cartData['orderProducts'], 'product_id'));
+
+                // Создаем запись в истории
+                $this->createOrderHistory($orderId);
+
+                // Обрабатываем платеж
+                $processor = $this->processOrderPayment($orderId, $orderCalculations['totalSum'], $orderArray['payment']);
+
+                // Обновляем статус заказа
+                $this->updateOrderStatus($orderId, 2);
+
+                // Возвращаем ответ
+                return $this->formatOrderResponse($orderId, $orderArray, $orderCalculations, $processor);
+            });
+        } catch (\Exception $e) {
+            Log::error('Order creation failed', ['error' => $e->getMessage(), 'order_data' => $orderArray]);
+            return false;
+        }
+    }
+
+    private function updateUserInfo(array $orderArray): void
     {
         auth()->user()->update([
             'phone' => $orderArray['phone'],
@@ -81,19 +134,10 @@ class OrderService
             'last_name' => $orderArray['last_name'],
             'email' => $orderArray['email'] ?? null,
         ]);
+    }
 
-        $delivery_method = $orderArray['delivery'];
-        $delivery_method_title = ($orderArray['delivery'] == 'self') ? "Самовывоз" : "Доставка";
-
-        $payment_method = $orderArray['payment'];
-        $payment_method_title = match($orderArray['payment']) {
-            'cash' => "При получении",
-            'bepaid' => "Bepaid (Банковская карта)",
-            'oplati' => "Oplati",
-            'erip' => "ЕРИП",
-            default => $orderArray['payment']
-        };
-
+    private function getCartData(array $orderArray): array
+    {
         $orderArray['pharmacy_id'] = ($orderArray['pharmacy_id'] == 0) ? 6864 : $orderArray['pharmacy_id'];
 
         $cartDTO = new CartDetailedDTO(
@@ -105,7 +149,16 @@ class OrderService
         $this->CartService->setUserGeo('', '');
         $products = $this->CartService->getCartDetailed($cartDTO);
 
-        if(empty($products)) return false;
+        if (empty($products)) {
+            return [];
+        }
+
+        $productIds = array_intersect(
+            array_column($products['cart']['products'], 'product_id'),
+            $orderArray['ids']
+        );
+
+        $productsFullInfo = $this->getProductsInfo($productIds);
 
         $position = 1;
         $sum = 0;
@@ -116,52 +169,152 @@ class OrderService
             $cartProduct = $product['product_info'];
             if (in_array($product['product_id'], $orderArray['ids'])) {
                 $price = (float)$product['product_totals']['total'];
-                $price_old = (float)$product['product_totals']['total_old'] ?? 0;
-                $sum += $price * $product['quantity'];
-                $oldsum += ($price_old > 0) ? $price_old * $product['quantity'] : $price * $product['quantity'];
+                $price_old = (float)($product['product_totals']['total_old'] ?? 0);
+                $quantity = $product['quantity'];
 
-                $orderProducts[$position-1] = [
+                $sum += $price * $quantity;
+                $oldsum += ($price_old > 0) ? $price_old * $quantity : $price * $quantity;
+
+                $fullProductInfo = $productsFullInfo->get($product['product_id']);
+                $productCharachters = null;
+                $productPromocodes = null;
+
+                if ($fullProductInfo) {
+                    $productCharachters = json_decode($fullProductInfo->product_charachters, true);
+                    $productPromocodes = json_decode($fullProductInfo->promocodes_json, true);
+                }
+
+                $orderProducts[] = [
                     'product_id' => $product['product_id'],
                     'title' => $cartProduct->pagetitle ?? 'Unknown Product',
                     'price' => $price,
-                    'count' => $product['quantity'],
-                    'options' => "{\"pharmacy_id\":{$orderArray['pharmacy_id']},\"iscancellations\":false,\"number_1c\":0,\"price\":{$price},\"price_old\":{$price_old}}",
-                    'meta' => null,
+                    'count' => $quantity,
+                    'options' => json_encode([
+                        "pharmacy_id" => $orderArray['pharmacy_id'],
+                        "iscancellations" => false,
+                        "number_1c" => 0,
+                        "price" => $price,
+                        "price_old" => $price_old,
+                        "image" => $productCharachters['image'] ?? null,
+                        "promocodes" => $productPromocodes ?? [],
+                    ]),
+                    'meta' => json_encode([
+                        'product_info' => $productCharachters,
+                        'promocodes_info' => $productPromocodes,
+                    ]),
                     'position' => $position,
+                    'image' => $productCharachters['image'] ?? null,
+                    'promocodes' => $productPromocodes ?? [],
+                    'product_info' => $productCharachters,
                 ];
                 $position++;
             }
         }
 
-        $promocodesDiscount = 0;
-        if (!empty($orderArray['promocodes'])) {
-            if (isset($products['cart']['totals']['promocodes_discount'])) {
-                $promocodesDiscount = (float)($products['cart']['totals']['promocodes_discount']);
-            }
-            elseif (isset($products['cart']['promocodes_info']['total_discount'])) {
-                $promocodesDiscount = (float)($products['cart']['promocodes_info']['total_discount']);
-            }
-            elseif (isset($products['promocodes_discount'])) {
-                $promocodesDiscount = (float)($products['promocodes_discount']);
-            }
+        return [
+            'products' => $products,
+            'orderProducts' => $orderProducts,
+            'sum' => $sum,
+            'oldsum' => $oldsum,
+            'productsFullInfo' => $productsFullInfo
+        ];
+    }
+
+    private function calculateOrderTotals(array $cartData, array $orderArray): array
+    {
+        $sum = $cartData['sum'];
+        $oldsum = $cartData['oldsum'];
+
+        // Правильный расчет скидки по промокодам
+        $promocodesDiscount = $this->calculatePromocodesDiscount($cartData['products'], $orderArray['promocodes'] ?? []);
+
+        // Применяем промокод к сумме товаров
+        $discountedSum = max(0, $sum - $promocodesDiscount);
+
+        // Рассчитываем доставку с учетом скидки по промокоду
+        $deliverySum = $this->calculateDeliveryPrice($orderArray, $discountedSum);
+
+        // Итоговая сумма
+        $totalSum = $discountedSum + $deliverySum;
+
+        Log::info('Order totals calculated', [
+            'original_sum' => $sum,
+            'promocodes_discount' => $promocodesDiscount,
+            'discounted_sum' => $discountedSum,
+            'delivery_sum' => $deliverySum,
+            'total_sum' => $totalSum
+        ]);
+
+        return [
+            'sum' => $sum,
+            'oldsum' => $oldsum,
+            'promocodesDiscount' => $promocodesDiscount,
+            'deliverySum' => $deliverySum,
+            'totalSum' => $totalSum,
+            'discountAmount' => $oldsum - $sum,
+            'oldPricesSaleSum' => ($oldsum > 0) ? round((1 - $sum/$oldsum)*100, 2) : 0
+        ];
+    }
+
+    private function calculatePromocodesDiscount(array $products, array $promocodes): float
+    {
+        if (empty($promocodes)) {
+            return 0;
         }
 
-        // Расчет стоимости доставки
-        $deliverySum = 0;
-        if ($delivery_method == 'delivery' && !empty($orderArray['delivery_zone'])) {
-            if ($orderArray['delivery_zone'] == 'yellow') {
-                $deliverySum = 8;
-            } else if ($orderArray['delivery_zone'] == 'green') {
-                if ($oldsum >= 40) {
-                    $deliverySum = 0;
-                } else {
-                    $deliverySum = 8;
-                }
-            }
+        $discount = 0;
+
+        // Проверяем в разных местах структуры ответа корзины
+        if (isset($products['cart']['totals']['promocodes_discount'])) {
+            $discount = (float)$products['cart']['totals']['promocodes_discount'];
+        } elseif (isset($products['cart']['promocodes_info']['total_discount'])) {
+            $discount = (float)$products['cart']['promocodes_info']['total_discount'];
+        } elseif (isset($products['promocodes_discount'])) {
+            $discount = (float)$products['promocodes_discount'];
         }
 
-        // Итоговая сумма с учетом промокодов
-        $totalSum = $sum + $deliverySum - $promocodesDiscount;
+        Log::info('Promocodes discount calculated', [
+            'promocodes' => $promocodes,
+            'discount' => $discount
+        ]);
+
+        return $discount;
+    }
+
+    private function calculateDeliveryPrice(array $orderArray, float $discountedSum): float
+    {
+        $delivery_method = $orderArray['delivery'];
+
+        if ($delivery_method !== 'delivery' || empty($orderArray['delivery_zone'])) {
+            return 0;
+        }
+
+        $deliveryZone = $orderArray['delivery_zone'];
+
+        switch ($deliveryZone) {
+            case 'yellow':
+                return 8;
+            case 'green':
+                // Для зеленой зоны проверяем сумму ПОСЛЕ применения промокода
+                return ($discountedSum >= 40) ? 0 : 8;
+            default:
+                return 0;
+        }
+    }
+
+    private function createOrder(array $orderArray, array $calculations): int
+    {
+        $delivery_method = $orderArray['delivery'];
+        $delivery_method_title = ($orderArray['delivery'] == 'self') ? "Самовывоз" : "Доставка";
+
+        $payment_method = $orderArray['payment'];
+        $payment_method_title = match($orderArray['payment']) {
+            'cash' => "При получении",
+            'bepaid' => "Bepaid (Банковская карта)",
+            'oplati' => "Oplati",
+            'erip' => "ЕРИП",
+            default => $orderArray['payment']
+        };
 
         $fields = json_encode([
             "comment" => $orderArray['comment'] ?? '',
@@ -189,12 +342,12 @@ class OrderService
             ],
             "promocodes" => $orderArray['promocodes'] ?? [],
             "sum" => [
-                "pricesSum" => $sum,
-                "oldPricesSum" => $oldsum,
-                "oldPricesSaleSum" => ($oldsum > 0) ? round((1 - $sum/$oldsum)*100, 2) : 0,
-                "promocodesDiscount" => $promocodesDiscount,
-                "deliverySum" => $deliverySum,
-                "totalSum" => $totalSum
+                "pricesSum" => $calculations['sum'],
+                "oldPricesSum" => $calculations['oldsum'],
+                "oldPricesSaleSum" => $calculations['oldPricesSaleSum'],
+                "promocodesDiscount" => $calculations['promocodesDiscount'],
+                "deliverySum" => $calculations['deliverySum'],
+                "totalSum" => $calculations['totalSum']
             ],
             "delivery_method" => $delivery_method,
             "delivery_method_title" => $delivery_method_title,
@@ -202,122 +355,128 @@ class OrderService
             "payment_method_title" => $payment_method_title
         ]);
 
-        // Создание заказа
-        $this->EvoCommerceOrders->customer_id = auth()->user()->id;
-        $this->EvoCommerceOrders->name = $orderArray['first_name'] . ' ' . $orderArray['last_name'];
-        $this->EvoCommerceOrders->phone = $orderArray['phone'];
-        $this->EvoCommerceOrders->email = $orderArray['email'] ?? '';
-        $this->EvoCommerceOrders->hash = $this->generateUniqueHash();
-        $this->EvoCommerceOrders->status_id = 1;
-        $this->EvoCommerceOrders->fields = $fields;
-        $this->EvoCommerceOrders->lang = 'russian-UTF8';
-        $this->EvoCommerceOrders->currency = 'BYN';
-        $this->EvoCommerceOrders->amount = $totalSum;
+        $order = new EvoCommerceOrders();
+        $order->customer_id = auth()->user()->id;
+        $order->name = $orderArray['first_name'] . ' ' . $orderArray['last_name'];
+        $order->phone = $orderArray['phone'];
+        $order->email = $orderArray['email'] ?? '';
+        $order->hash = $this->generateUniqueHash();
+        $order->status_id = 1;
+        $order->fields = $fields;
+        $order->lang = 'russian-UTF8';
+        $order->currency = 'BYN';
+        $order->amount = $calculations['totalSum'];
+        $order->save();
 
-        $this->EvoCommerceOrders->save();
-        $order_id = $this->EvoCommerceOrders->id;
+        return $order->id;
+    }
 
-        // Сохранение продуктов заказа
-        foreach($orderProducts as $orderProduct) {
-            $orderProduct['order_id'] = $order_id;
-            $productObj = app()->make(EvoCommerceOrderProducts::class);
+    private function saveOrderProducts(int $orderId, array $orderProducts, int $pharmacyId): void
+    {
+        foreach ($orderProducts as $orderProduct) {
+            $orderProduct['order_id'] = $orderId;
+            $productObj = new EvoCommerceOrderProducts();
             $productObj->fill($orderProduct)->save();
-            unset($productObj);
-            auth()->user()->cart->products()->detach($orderProduct['product_id']);
         }
+    }
 
-        // История заказа
-        $this->EvoCommerceOrderHistory->order_id = $order_id;
-        $this->EvoCommerceOrderHistory->status_id = 1;
-        $this->EvoCommerceOrderHistory->comment = '';
-        $this->EvoCommerceOrderHistory->notify = 0;
-        $this->EvoCommerceOrderHistory->user_id = auth()->user()->id;
-        $this->EvoCommerceOrderHistory->created_at = date('Y-m-d H:i:s');
-        $this->EvoCommerceOrderHistory->save();
+    private function clearCartProducts(array $productIds): void
+    {
+        foreach ($productIds as $productId) {
+            auth()->user()->cart->products()->detach($productId);
+        }
+    }
 
-        // Платеж
-        $this->EvoCommerceOrderPayments->order_id = $order_id;
-        $this->EvoCommerceOrderPayments->amount = $totalSum;
-        $this->EvoCommerceOrderPayments->hash = $this->generateUniqueHash();
-        $this->EvoCommerceOrderPayments->payment_method = $payment_method;
-        $this->EvoCommerceOrderPayments->meta = '{}';
-        $this->EvoCommerceOrderPayments->save();
+    private function createOrderHistory(int $orderId): void
+    {
+        $history = new EvoCommerceOrderHistory();
+        $history->order_id = $orderId;
+        $history->status_id = 1;
+        $history->comment = '';
+        $history->notify = 0;
+        $history->user_id = auth()->user()->id;
+        $history->created_at = now();
+        $history->save();
+    }
+
+    private function processOrderPayment(int $orderId, float $totalSum, string $paymentMethod): ?object
+    {
+        $payment = new EvoCommerceOrderPayments();
+        $payment->order_id = $orderId;
+        $payment->amount = $totalSum;
+        $payment->hash = $this->generateUniqueHash();
+        $payment->payment_method = $paymentMethod;
+        $payment->meta = '{}';
+        $payment->save();
 
         // Обработка платежей
-        $processor = null;
-        switch($payment_method) {
-            case 'bepaid':
-                $processor = new Bepaid();
-            break;
-            case 'oplati':
-                $processor = new Oplati();
-            break;
-            case 'erip':
-                $processor = new EripExpresspay();
-            break;
-            default:
-                $processor = null;
-            break;
+        return match($paymentMethod) {
+            'bepaid' => new Bepaid(),
+            'oplati' => new Oplati(),
+            'erip' => new EripExpresspay(),
+            default => null
+        };
+    }
+
+    private function updateOrderStatus(int $orderId, int $statusId): void
+    {
+        $order = EvoCommerceOrders::find($orderId);
+        if ($order) {
+            $order->status_id = $statusId;
+            $order->save();
         }
+    }
 
-        $this->EvoCommerceOrders->status_id = 2;
-        $this->EvoCommerceOrders->save();
-
+    private function formatOrderResponse(int $orderId, array $orderArray, array $calculations, ?object $processor): array
+    {
         // Получаем информацию об аптеке
         $pharmacyData = $this->PharmacyService->getPharmacyById($orderArray['pharmacy_id']);
-        $pharmacy = null;
-        if (is_array($pharmacyData) && !empty($pharmacyData)) {
-            $pharmacy = (object)$pharmacyData[0];
-        } elseif (is_object($pharmacyData) && method_exists($pharmacyData, 'first')) {
-            $pharmacy = $pharmacyData->first();
-        } elseif (is_object($pharmacyData)) {
-            $pharmacy = $pharmacyData;
-        }
+        $pharmacy = $this->extractPharmacyInfo($pharmacyData);
 
         // Полный адрес доставки
-        $fullDeliveryAddress = null;
-        if ($delivery_method == 'delivery') {
-            $addressParts = [];
-            if (!empty($orderArray['city'])) $addressParts[] = $orderArray['city'];
-            if (!empty($orderArray['address'])) $addressParts[] = $orderArray['address'];
-            if (!empty($orderArray['entrance'])) $addressParts[] = 'подъезд ' . $orderArray['entrance'];
-            if (!empty($orderArray['floor'])) $addressParts[] = 'этаж ' . $orderArray['floor'];
-            if (!empty($orderArray['apartment'])) $addressParts[] = 'кв. ' . $orderArray['apartment'];
-            $fullDeliveryAddress = !empty($addressParts) ? implode(', ', $addressParts) : null;
-        }
+        $fullDeliveryAddress = $this->buildFullDeliveryAddress($orderArray);
+
+        $delivery_method = $orderArray['delivery'];
+        $delivery_method_title = ($orderArray['delivery'] == 'self') ? "Самовывоз" : "Доставка";
+        $payment_method_title = match($orderArray['payment']) {
+            'cash' => "При получении",
+            'bepaid' => "Bepaid (Банковская карта)",
+            'oplati' => "Oplati",
+            'erip' => "ЕРИП",
+            default => $orderArray['payment']
+        };
 
         $orderData = (object)[
-            'order_id' => $order_id,
+            'order_id' => $orderId,
             'customer_id' => auth()->user()->id,
             'name' => $orderArray['first_name'] . ' ' . $orderArray['last_name'],
             'phone' => $orderArray['phone'],
             'email' => $orderArray['email'] ?? '',
             'status_title' => 'Обработка',
-            'created_at' => $this->EvoCommerceOrderHistory->created_at,
+            'created_at' => now()->format('Y-m-d H:i:s'),
             'pharmacy_name' => $pharmacy->pagetitle ?? 'Unknown Pharmacy',
             'pharmacy_id' => $pharmacy->pharmacy_id ?? null,
             'address' => $pharmacy->address ?? null,
-            'order_products_json' => $orderProducts,
-            'prices_sum' => $sum,
-            'old_prices_sum' => $oldsum,
-            'old_prices_sale_sum' => ($oldsum > 0) ? round((1 - $sum/$oldsum)*100, 2) : 0,
-            'delivery_sum' => $deliverySum,
-            'total_sum' => $totalSum,
-            'promocodes_discount' => $promocodesDiscount,
+            'prices_sum' => $calculations['sum'],
+            'old_prices_sum' => $calculations['oldsum'],
+            'old_prices_sale_sum' => $calculations['oldPricesSaleSum'],
+            'delivery_sum' => $calculations['deliverySum'],
+            'total_sum' => $calculations['totalSum'],
+            'promocodes_discount' => $calculations['promocodesDiscount'],
             'promocodes' => $orderArray['promocodes'] ?? [],
             'comment' => $orderArray['comment'] ?? '',
             'delivery_method' => $delivery_method,
             'delivery_method_title' => $delivery_method_title,
             'full_delivery_address' => $fullDeliveryAddress,
-            'payment_method' => $payment_method,
+            'payment_method' => $orderArray['payment'],
             'payment_method_title' => $payment_method_title,
-            'has_discount' => ($oldsum > $sum),
-            'discount_amount' => $oldsum - $sum,
-            'is_delivery' => ($deliverySum > 0),
-            'has_promocodes' => ($promocodesDiscount > 0),
+            'has_discount' => ($calculations['oldsum'] > $calculations['sum']),
+            'discount_amount' => $calculations['discountAmount'],
+            'is_delivery' => ($calculations['deliverySum'] > 0),
+            'has_promocodes' => ($calculations['promocodesDiscount'] > 0),
         ];
 
-        $response = [
+        return [
             'order' => $orderData,
             'summary' => [
                 'products_price' => $orderData->prices_sum,
@@ -343,14 +502,65 @@ class OrderService
                 'has_discount' => $orderData->has_discount,
                 'has_promocodes' => $orderData->has_promocodes,
                 'promocodes' => $orderData->promocodes,
-                'payment_link' => $processor ? $processor->getPaymentLink($this->EvoCommerceOrders, $this->EvoCommerceOrderPayments) : null
+                'payment_link' => $processor ? $processor->getPaymentLink(
+                    EvoCommerceOrders::find($orderId),
+                    EvoCommerceOrderPayments::where('order_id', $orderId)->first()
+                ) : null
             ]
         ];
-
-        return $response;
     }
 
-    public function getDetailed(string $userId, int $orderId)
+    private function extractPharmacyInfo($pharmacyData): ?object
+    {
+        if (is_array($pharmacyData) && !empty($pharmacyData)) {
+            return (object)$pharmacyData[0];
+        } elseif (is_object($pharmacyData) && method_exists($pharmacyData, 'first')) {
+            return $pharmacyData->first();
+        } elseif (is_object($pharmacyData)) {
+            return $pharmacyData;
+        }
+        return null;
+    }
+
+    private function buildFullDeliveryAddress(array $orderArray): ?string
+    {
+        if ($orderArray['delivery'] !== 'delivery') {
+            return null;
+        }
+
+        $addressParts = [];
+        if (!empty($orderArray['city'])) $addressParts[] = $orderArray['city'];
+        if (!empty($orderArray['address'])) $addressParts[] = $orderArray['address'];
+        if (!empty($orderArray['entrance'])) $addressParts[] = 'подъезд ' . $orderArray['entrance'];
+        if (!empty($orderArray['floor'])) $addressParts[] = 'этаж ' . $orderArray['floor'];
+        if (!empty($orderArray['apartment'])) $addressParts[] = 'кв. ' . $orderArray['apartment'];
+
+        return !empty($addressParts) ? implode(', ', $addressParts) : null;
+    }
+
+    private function getProductsInfo(array $productIds): Collection
+    {
+        $uncachedIds = array_diff($productIds, array_keys($this->productCache));
+
+        if (!empty($uncachedIds)) {
+            $products = $this->ProductInfoViewJson
+                ->query()
+                ->select(['product_id', 'product_charachters', 'promocodes_json'])
+                ->whereIn('product_id', $uncachedIds)
+                ->get();
+
+            foreach ($products as $product) {
+                $this->productCache[$product->product_id] = $product;
+            }
+        }
+
+        return collect($productIds)
+            ->map(fn($id) => $this->productCache[$id] ?? null)
+            ->filter()
+            ->keyBy('product_id');
+    }
+
+    public function getDetailed(string $userId, int $orderId): Collection
     {
         $orders = $this->OrderViewJson->query()
             ->where('customer_id', $userId)
@@ -361,158 +571,167 @@ class OrderService
             return $orders;
         }
 
+        return $this->enrichOrdersWithProductInfo($orders);
+    }
+
+    private function enrichOrdersWithProductInfo(Collection $orders): Collection
+    {
         $firstOrder = $orders->first();
-        $firstProduct = $firstOrder->order_products_json;
+        $productIds = collect($firstOrder->order_products_json)
+            ->pluck('product_id')
+            ->unique()
+            ->values()
+            ->toArray();
 
-        $orderFields = json_decode($firstOrder->fields, true);
+        $productsFullInfo = $this->getProductsInfo($productIds);
 
-        $firstPharmacyId = collect($firstProduct)
+        // Обогащаем товары заказа
+        $enrichedProducts = collect($firstOrder->order_products_json)
+            ->map(function($product) use ($productsFullInfo) {
+                return $this->enrichProductWithFullInfo($product, $productsFullInfo);
+            })
+            ->toArray();
+
+        $orderFields = json_decode($firstOrder->fields, true) ?? [];
+
+        // Получаем информацию об аптеке
+        $firstPharmacyId = collect($firstOrder->order_products_json)
             ->pluck('pharmacy_id')
             ->filter()
             ->first();
 
-        $firstPharmacy = null;
-        if ($firstPharmacyId) {
-            try {
-                $firstPharmacy = DB::table('evo_pharmacies_view')
-                    ->where('pharmacy_id', $firstPharmacyId)
-                    ->first();
-            } catch (\Exception $e) {
-                // Если таблица не существует или нет доступа, используем null
-                $firstPharmacy = null;
-            }
-        }
+        $pharmacy = $this->getPharmacyInfo($firstPharmacyId);
 
-        $orders->transform(function($order) use ($firstPharmacy, $orderFields) {
-            $order->pharmacy_name = $firstPharmacy?->pagetitle ?? 'Unknown Pharmacy';
-
-            $order->address = $firstPharmacy?->address;
-
-            $order->pharmacy_id = $firstPharmacy?->pharmacy_id;
-
-            if (!empty($orderFields)) {
-                $order->prices_sum = $orderFields['sum']['pricesSum'] ?? 0; // стоимость товаров со скидкой
-                $order->old_prices_sum = $orderFields['sum']['oldPricesSum'] ?? 0; // стоимость товаров без скидки
-                $order->old_prices_sale_sum = $orderFields['sum']['oldPricesSaleSum'] ?? 0; // процент скидки
-                $order->delivery_sum = $orderFields['sum']['deliverySum'] ?? 0; // стоимость доставки
-                $order->total_sum = $orderFields['sum']['totalSum'] ?? 0; // итоговая сумма
-
-                //Информация о промокодах
-                $order->promocodes_discount = $orderFields['sum']['promocodesDiscount'] ?? 0;
-                $order->promocodes = $orderFields['promocodes'] ?? [];
-
-                // Комментарий к заказу
-                $order->comment = $orderFields['comment'] ?? '';
-
-                // Дополнительная информация о доставке
-                if (!empty($orderFields['delivery'])) {
-                    $deliveryInfo = $orderFields['delivery'];
-                    $order->delivery_method = $deliveryInfo['id'] ?? $orderFields['delivery_method'] ?? null;
-                    $order->delivery_method_title = $deliveryInfo['title'] ?? $orderFields['delivery_method_title'] ?? null;
-
-                    // Полный адрес доставки
-                    $addressParts = [];
-                    if (!empty($deliveryInfo['city'])) $addressParts[] = $deliveryInfo['city'];
-                    if (!empty($deliveryInfo['street'])) $addressParts[] = $deliveryInfo['street'];
-                    if (!empty($deliveryInfo['entrance'])) $addressParts[] = 'подъезд ' . $deliveryInfo['entrance'];
-                    if (!empty($deliveryInfo['floor'])) $addressParts[] = 'этаж ' . $deliveryInfo['floor'];
-                    if (!empty($deliveryInfo['apartment'])) $addressParts[] = 'кв. ' . $deliveryInfo['apartment'];
-
-                    $order->full_delivery_address = !empty($addressParts) ? implode(', ', $addressParts) : null;
-                }
-
-                // Информация о способе оплаты
-                if (!empty($orderFields['payment'])) {
-                    $order->payment_method = $orderFields['payment']['id'] ?? $orderFields['payment_method'] ?? null;
-                    $order->payment_method_title = $orderFields['payment']['title'] ?? $orderFields['payment_method_title'] ?? null;
-                }
-
-                // Дополнительные поля для удобства фронтенда
-                $order->has_discount = ($order->old_prices_sum > $order->prices_sum);
-                $order->discount_amount = $order->old_prices_sum - $order->prices_sum;
-                $order->is_delivery = ($order->delivery_sum > 0);
-                $order->has_promocodes = ($order->promocodes_discount > 0);
-            }
-
-            return $order;
+        return $orders->transform(function($order) use ($pharmacy, $orderFields, $enrichedProducts) {
+            return $this->transformOrderWithEnrichedData($order, $pharmacy, $orderFields, $enrichedProducts);
         });
-
-        return $orders;
     }
 
-    /**
-     * @param $id
-     * @return Collection
-     */
+    private function enrichProductWithFullInfo(array $product, Collection $productsFullInfo): array
+    {
+        $fullInfo = $productsFullInfo->get($product['product_id']);
+        if ($fullInfo) {
+            $productCharachters = json_decode($fullInfo->product_charachters, true);
+            $productPromocodes = json_decode($fullInfo->promocodes_json, true);
+
+            $product['image'] = $productCharachters['image'] ?? null;
+            $product['promocodes'] = $productPromocodes ?? [];
+            $product['product_info'] = $productCharachters;
+        }
+        return $product;
+    }
+
+    private function getPharmacyInfo(?int $pharmacyId): ?object
+    {
+        if (!$pharmacyId) {
+            return null;
+        }
+
+        try {
+            return DB::table('evo_pharmacies_view')
+                ->where('pharmacy_id', $pharmacyId)
+                ->first();
+        } catch (\Exception $e) {
+            Log::warning('Pharmacy info not available', ['pharmacy_id' => $pharmacyId]);
+            return null;
+        }
+    }
+
+    private function transformOrderWithEnrichedData($order, ?object $pharmacy, array $orderFields, array $enrichedProducts): object
+    {
+        $order->pharmacy_name = $pharmacy?->pagetitle ?? 'Unknown Pharmacy';
+        $order->address = $pharmacy?->address;
+        $order->pharmacy_id = $pharmacy?->pharmacy_id;
+        $order->order_products_json = $enrichedProducts;
+
+        if (!empty($orderFields)) {
+            $this->fillOrderFieldsFromJson($order, $orderFields);
+        }
+
+        return $order;
+    }
+
+    private function fillOrderFieldsFromJson($order, array $orderFields): void
+    {
+        $sumData = $orderFields['sum'] ?? [];
+
+        $order->prices_sum = $sumData['pricesSum'] ?? 0;
+        $order->old_prices_sum = $sumData['oldPricesSum'] ?? 0;
+        $order->old_prices_sale_sum = $sumData['oldPricesSaleSum'] ?? 0;
+        $order->delivery_sum = $sumData['deliverySum'] ?? 0;
+        $order->total_sum = $sumData['totalSum'] ?? 0;
+        $order->promocodes_discount = $sumData['promocodesDiscount'] ?? 0;
+        $order->promocodes = $orderFields['promocodes'] ?? [];
+        $order->comment = $orderFields['comment'] ?? '';
+
+        // Информация о доставке
+        if (!empty($orderFields['delivery'])) {
+            $this->fillDeliveryInfo($order, $orderFields['delivery'], $orderFields);
+        }
+
+        // Информация о способе оплаты
+        if (!empty($orderFields['payment'])) {
+            $order->payment_method = $orderFields['payment']['id'] ?? $orderFields['payment_method'] ?? null;
+            $order->payment_method_title = $orderFields['payment']['title'] ?? $orderFields['payment_method_title'] ?? null;
+        }
+
+        // Дополнительные поля
+        $order->has_discount = ($order->old_prices_sum > $order->prices_sum);
+        $order->discount_amount = $order->old_prices_sum - $order->prices_sum;
+        $order->is_delivery = ($order->delivery_sum > 0);
+        $order->has_promocodes = ($order->promocodes_discount > 0);
+    }
+
+    private function fillDeliveryInfo($order, array $deliveryInfo, array $orderFields): void
+    {
+        $order->delivery_method = $deliveryInfo['id'] ?? $orderFields['delivery_method'] ?? null;
+        $order->delivery_method_title = $deliveryInfo['title'] ?? $orderFields['delivery_method_title'] ?? null;
+
+        // Полный адрес доставки
+        $addressParts = [];
+        if (!empty($deliveryInfo['city'])) $addressParts[] = $deliveryInfo['city'];
+        if (!empty($deliveryInfo['street'])) $addressParts[] = $deliveryInfo['street'];
+        if (!empty($deliveryInfo['entrance'])) $addressParts[] = 'подъезд ' . $deliveryInfo['entrance'];
+        if (!empty($deliveryInfo['floor'])) $addressParts[] = 'этаж ' . $deliveryInfo['floor'];
+        if (!empty($deliveryInfo['apartment'])) $addressParts[] = 'кв. ' . $deliveryInfo['apartment'];
+
+        $order->full_delivery_address = !empty($addressParts) ? implode(', ', $addressParts) : null;
+    }
+
     public function getList(string $userId, ?int $isActive, ?int $number, ?array $delivery): Collection
     {
-        $deliveryTitles = DELIVERY_TITLES;
-        if (!empty($delivery)) {
-            $deliveryArCount = count($delivery);
+        $deliveryTitles = $this->getDeliveryTitles($delivery);
 
-            if ($deliveryArCount == 1 && $delivery[0] == 'Самовывоз') {
-                $deliveryTitles = SELF_GET_TITLES;
-            }
-            else if ($deliveryArCount == 2) {
-                $deliveryTitles = array_merge(DELIVERY_TITLES, SELF_GET_TITLES);
-                //dd($deliveryTitles);
-            }
-        }
-
-        return
-            $this->OrderViewJson->query()
-                ->where('customer_id', $userId)
-                ->when(!empty($number), function($query) use($number) {
-                    return $query->where('order_id', $number);
-                })
-                ->when((!empty($isActive) && $isActive == 1), function($query) use($isActive) {
-                    return $query->whereNotIn('status_title', INACTIVE_STATUSES);
-                })
-                ->when((!empty($delivery)), function($query) use($deliveryTitles) {
-                    return $query->whereIn('delivery_method_title', $deliveryTitles);
-                })
-                ->get();
-
+        return $this->OrderViewJson->query()
+            ->where('customer_id', $userId)
+            ->when(!empty($number), fn($query) => $query->where('order_id', $number))
+            ->when((!empty($isActive) && $isActive == 1), fn($query) => $query->whereNotIn('status_title', INACTIVE_STATUSES))
+            ->when(!empty($delivery), fn($query) => $query->whereIn('delivery_method_title', $deliveryTitles))
+            ->orderBy('order_id', 'desc')
+            ->get();
     }
 
-    /**
-     * @return Collection
-     */
+    private function getDeliveryTitles(?array $delivery): array
+    {
+        if (empty($delivery)) {
+            return array_merge(DELIVERY_TITLES, SELF_GET_TITLES);
+        }
+
+        $deliveryArCount = count($delivery);
+
+        if ($deliveryArCount == 1 && $delivery[0] == 'Самовывоз') {
+            return SELF_GET_TITLES;
+        }
+
+        if ($deliveryArCount == 2) {
+            return array_merge(DELIVERY_TITLES, SELF_GET_TITLES);
+        }
+
+        return DELIVERY_TITLES;
+    }
+
     public function getOrderStatuses(): Collection
     {
         return $this->EvoCommerceOrderStatuses->query()->get();
-    }
-
-
-    /**
-     * Построение полного адреса
-     */
-    private function buildFullAddress(array $orderArray): string
-    {
-        if (empty($orderArray['address'])) {
-            return '';
-        }
-
-        $address = $orderArray['address'];
-        $addressParts = [];
-
-        if (!empty($orderArray['entrance'])) {
-            $addressParts[] = 'подъезд ' . $orderArray['entrance'];
-        }
-        if (!empty($orderArray['floor'])) {
-            $addressParts[] = 'этаж ' . $orderArray['floor'];
-        }
-        if (!empty($orderArray['apartment'])) {
-            $addressParts[] = 'квартира ' . $orderArray['apartment'];
-        }
-        if (!empty($orderArray['intercom'])) {
-            $addressParts[] = 'домофон ' . $orderArray['intercom'];
-        }
-
-        if (!empty($addressParts)) {
-            $address .= ' (' . implode(', ', $addressParts) . ')';
-        }
-
-        return $address;
     }
 }
