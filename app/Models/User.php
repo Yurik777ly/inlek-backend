@@ -38,7 +38,7 @@ class User extends Authenticatable
  * @package App\Models
  */
 {
-    use HasFactory, Notifiable, HasApiTokens, SoftDeletes;
+    use HasFactory, Notifiable, HasApiTokens;
 	protected $table = 'users';
 
 	protected $casts = [

@@ -134,7 +134,7 @@ class UserService
                     $changes['anything'] = true;
                 }
 
-                if (!Hash::check($profileDTO->newPassword, $user->password)) {
+                if ($changes['password'] && !Hash::check($profileDTO->newPassword, $user->password)) {
                     $changes['password'] = true;
                     $changes['anything'] = true;
                 }

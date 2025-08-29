@@ -100,6 +100,7 @@ class OrderController extends Controller
                     'comment' => $orderData->comment ?? '',
                     'has_discount' => $orderData->has_discount ?? false,
                     'has_promocodes' => $orderData->has_promocodes ?? false,
+                    'promocodes' => $orderData->promocodes ?? [],
                 ]
             ];
 

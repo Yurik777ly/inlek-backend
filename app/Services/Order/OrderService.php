@@ -133,6 +133,19 @@ class OrderService
             }
         }
 
+        $promocodesDiscount = 0;
+        if (!empty($orderArray['promocodes'])) {
+            if (isset($products['cart']['totals']['promocodes_discount'])) {
+                $promocodesDiscount = (float)($products['cart']['totals']['promocodes_discount']);
+            }
+            elseif (isset($products['cart']['promocodes_info']['total_discount'])) {
+                $promocodesDiscount = (float)($products['cart']['promocodes_info']['total_discount']);
+            }
+            elseif (isset($products['promocodes_discount'])) {
+                $promocodesDiscount = (float)($products['promocodes_discount']);
+            }
+        }
+
         // Расчет стоимости доставки
         $deliverySum = 0;
         if ($delivery_method == 'delivery' && !empty($orderArray['delivery_zone'])) {
@@ -147,9 +160,9 @@ class OrderService
             }
         }
 
-        $totalSum = $sum + $deliverySum;
+        // Итоговая сумма с учетом промокодов
+        $totalSum = $sum + $deliverySum - $promocodesDiscount;
 
-        // Расширенный JSON с полями
         $fields = json_encode([
             "comment" => $orderArray['comment'] ?? '',
             "agree" => true,
@@ -179,6 +192,7 @@ class OrderService
                 "pricesSum" => $sum,
                 "oldPricesSum" => $oldsum,
                 "oldPricesSaleSum" => ($oldsum > 0) ? round((1 - $sum/$oldsum)*100, 2) : 0,
+                "promocodesDiscount" => $promocodesDiscount,
                 "deliverySum" => $deliverySum,
                 "totalSum" => $totalSum
             ],
@@ -272,7 +286,6 @@ class OrderService
             $fullDeliveryAddress = !empty($addressParts) ? implode(', ', $addressParts) : null;
         }
 
-        // Формирование ответа в том же формате, что и getDetailed
         $orderData = (object)[
             'order_id' => $order_id,
             'customer_id' => auth()->user()->id,
@@ -290,7 +303,8 @@ class OrderService
             'old_prices_sale_sum' => ($oldsum > 0) ? round((1 - $sum/$oldsum)*100, 2) : 0,
             'delivery_sum' => $deliverySum,
             'total_sum' => $totalSum,
-            'promocodes_discount' => 0,
+            'promocodes_discount' => $promocodesDiscount,
+            'promocodes' => $orderArray['promocodes'] ?? [],
             'comment' => $orderArray['comment'] ?? '',
             'delivery_method' => $delivery_method,
             'delivery_method_title' => $delivery_method_title,
@@ -300,7 +314,7 @@ class OrderService
             'has_discount' => ($oldsum > $sum),
             'discount_amount' => $oldsum - $sum,
             'is_delivery' => ($deliverySum > 0),
-            'has_promocodes' => false,
+            'has_promocodes' => ($promocodesDiscount > 0),
         ];
 
         $response = [
@@ -328,6 +342,7 @@ class OrderService
                 'comment' => $orderData->comment,
                 'has_discount' => $orderData->has_discount,
                 'has_promocodes' => $orderData->has_promocodes,
+                'promocodes' => $orderData->promocodes,
                 'payment_link' => $processor ? $processor->getPaymentLink($this->EvoCommerceOrders, $this->EvoCommerceOrderPayments) : null
             ]
         ];
@@ -382,8 +397,9 @@ class OrderService
                 $order->delivery_sum = $orderFields['sum']['deliverySum'] ?? 0; // стоимость доставки
                 $order->total_sum = $orderFields['sum']['totalSum'] ?? 0; // итоговая сумма
 
-                // Информация о промокодах (если есть)
+                //Информация о промокодах
                 $order->promocodes_discount = $orderFields['sum']['promocodesDiscount'] ?? 0;
+                $order->promocodes = $orderFields['promocodes'] ?? [];
 
                 // Комментарий к заказу
                 $order->comment = $orderFields['comment'] ?? '';
