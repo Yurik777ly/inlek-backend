@@ -608,7 +608,7 @@ class OrderService
     {
         $orders = $this->OrderViewJson->query()
             ->where('customer_id', $userId)
-            ->where('order_id', $orderId)
+            ->where('id', $orderId)
             ->get();
 
         if ($orders->isEmpty()) {
@@ -625,7 +625,7 @@ class OrderService
         // Проверяем что order_products_json существует и является массивом
         if (!isset($firstOrder->order_products_json) || !is_array($firstOrder->order_products_json)) {
             Log::warning('order_products_json is not valid array', [
-                'order_id' => $firstOrder->order_id ?? 'unknown',
+                'order_id' => $firstOrder->id ?? 'unknown',
                 'type' => gettype($firstOrder->order_products_json ?? null)
             ]);
             return $orders;
@@ -765,10 +765,10 @@ class OrderService
 
         return $this->OrderViewJson->query()
             ->where('customer_id', $userId)
-            ->when(!empty($number), fn($query) => $query->where('order_id', $number))
+            ->when(!empty($number), fn($query) => $query->where('id', $number))
             ->when((!empty($isActive) && $isActive == 1), fn($query) => $query->whereNotIn('status_title', INACTIVE_STATUSES))
             ->when(!empty($delivery), fn($query) => $query->whereIn('delivery_method_title', $deliveryTitles))
-            ->orderBy('order_id', 'desc')
+            ->orderBy('id', 'desc')
             ->get();
     }
 
