@@ -24,6 +24,7 @@ select
     json_unquote(json_extract(eco.fields, '$.delivery.entrance')) as delivery_entrance,
     json_unquote(json_extract(eco.fields, '$.delivery.floor')) as delivery_floor,
     json_unquote(json_extract(eco.fields, '$.delivery.apartment')) as delivery_apartment,
+    json_unquote(json_extract(eco.fields, '$.delivery.intercom')) as delivery_intercom,
     json_unquote(json_extract(eco.fields, '$.delivery.deliveryComment')) as delivery_comment,
     json_unquote(json_extract(eco.fields, '$.payment.id')) as payment_id,
     json_unquote(json_extract(eco.fields, '$.payment.title')) as payment_title,
@@ -75,5 +76,4 @@ from evo_commerce_orders eco
                     on eco.id = epovj.order_id
 group by
     eco.id, eco.customer_id, eco.created_at, eco.updated_at, eco.phone, eco.name, eco.email, eco.amount, eco.currency,
-    eco.status_id, ecos.title, eco.fields
-;
+    eco.status_id, ecos.title, eco.fields;

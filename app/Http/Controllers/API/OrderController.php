@@ -91,6 +91,11 @@ class OrderController extends Controller
                     'method_title' => $orderData->delivery_method_title ?? null,
                     'address' => $orderData->full_delivery_address ?? null,
                     'is_delivery' => $orderData->is_delivery ?? false,
+                    'entrance' => $orderData->delivery_entrance ?? null,
+                    'floor' => $orderData->delivery_floor ?? null,
+                    'apartment' => $orderData->delivery_apartment ?? null,
+                    'intercom' => $orderData->delivery_intercom ?? null,
+                    'comment' => $orderData->delivery_comment ?? null,
                 ],
                 'payment_info' => [
                     'method' => $orderData->payment_method ?? null,

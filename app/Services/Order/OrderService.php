@@ -180,8 +180,8 @@ class OrderService
                 $productPromocodes = null;
 
                 if ($fullProductInfo) {
-                    $productCharachters = json_decode($fullProductInfo->product_charachters, true);
-                    $productPromocodes = json_decode($fullProductInfo->promocodes_json, true);
+                    $productCharachters = $this->safeJsonDecode($fullProductInfo->product_charachters);
+                    $productPromocodes = $this->safeJsonDecode($fullProductInfo->promocodes_json);
                 }
 
                 $orderProducts[] = [
@@ -468,6 +468,11 @@ class OrderService
             'delivery_method' => $delivery_method,
             'delivery_method_title' => $delivery_method_title,
             'full_delivery_address' => $fullDeliveryAddress,
+            'delivery_entrance' => $orderArray['entrance'] ?? null,
+            'delivery_floor' => $orderArray['floor'] ?? null,
+            'delivery_apartment' => $orderArray['apartment'] ?? null,
+            'delivery_intercom' => $orderArray['intercom'] ?? null,
+            'delivery_comment' => $orderArray['comment'] ?? null,
             'payment_method' => $orderArray['payment'],
             'payment_method_title' => $payment_method_title,
             'has_discount' => ($calculations['oldsum'] > $calculations['sum']),
@@ -492,6 +497,11 @@ class OrderService
                 'method_title' => $orderData->delivery_method_title,
                 'address' => $orderData->full_delivery_address,
                 'is_delivery' => $orderData->is_delivery,
+                'entrance' => $orderData->delivery_entrance,
+                'floor' => $orderData->delivery_floor,
+                'apartment' => $orderData->delivery_apartment,
+                'intercom' => $orderData->delivery_intercom,
+                'comment' => $orderData->delivery_comment,
             ],
             'payment_info' => [
                 'method' => $orderData->payment_method,
@@ -560,6 +570,40 @@ class OrderService
             ->keyBy('product_id');
     }
 
+    /**
+     * Безопасное декодирование JSON с проверкой типа данных
+     */
+    private function safeJsonDecode($data): ?array
+    {
+        if (is_null($data)) {
+            return null;
+        }
+
+        if (is_array($data)) {
+            return $data;
+        }
+
+        if (!is_string($data)) {
+            Log::warning('Unexpected data type for JSON decode', [
+                'type' => gettype($data),
+                'value' => $data
+            ]);
+            return null;
+        }
+
+        $decoded = json_decode($data, true);
+
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            Log::warning('JSON decode error', [
+                'error' => json_last_error_msg(),
+                'data' => $data
+            ]);
+            return null;
+        }
+
+        return $decoded;
+    }
+
     public function getDetailed(string $userId, int $orderId): Collection
     {
         $orders = $this->OrderViewJson->query()
@@ -577,6 +621,16 @@ class OrderService
     private function enrichOrdersWithProductInfo(Collection $orders): Collection
     {
         $firstOrder = $orders->first();
+
+        // Проверяем что order_products_json существует и является массивом
+        if (!isset($firstOrder->order_products_json) || !is_array($firstOrder->order_products_json)) {
+            Log::warning('order_products_json is not valid array', [
+                'order_id' => $firstOrder->order_id ?? 'unknown',
+                'type' => gettype($firstOrder->order_products_json ?? null)
+            ]);
+            return $orders;
+        }
+
         $productIds = collect($firstOrder->order_products_json)
             ->pluck('product_id')
             ->unique()
@@ -592,7 +646,7 @@ class OrderService
             })
             ->toArray();
 
-        $orderFields = json_decode($firstOrder->fields, true) ?? [];
+        $orderFields = $this->safeJsonDecode($firstOrder->fields) ?? [];
 
         // Получаем информацию об аптеке
         $firstPharmacyId = collect($firstOrder->order_products_json)
@@ -611,8 +665,8 @@ class OrderService
     {
         $fullInfo = $productsFullInfo->get($product['product_id']);
         if ($fullInfo) {
-            $productCharachters = json_decode($fullInfo->product_charachters, true);
-            $productPromocodes = json_decode($fullInfo->promocodes_json, true);
+            $productCharachters = $this->safeJsonDecode($fullInfo->product_charachters);
+            $productPromocodes = $this->safeJsonDecode($fullInfo->promocodes_json);
 
             $product['image'] = $productCharachters['image'] ?? null;
             $product['promocodes'] = $productPromocodes ?? [];
@@ -686,6 +740,13 @@ class OrderService
     {
         $order->delivery_method = $deliveryInfo['id'] ?? $orderFields['delivery_method'] ?? null;
         $order->delivery_method_title = $deliveryInfo['title'] ?? $orderFields['delivery_method_title'] ?? null;
+
+        // Детализация адреса доставки
+        $order->delivery_entrance = $deliveryInfo['entrance'] ?? $orderFields['entrance'] ?? null;
+        $order->delivery_floor = $deliveryInfo['floor'] ?? $orderFields['floor'] ?? null;
+        $order->delivery_apartment = $deliveryInfo['apartment'] ?? $orderFields['apartment'] ?? null;
+        $order->delivery_intercom = $deliveryInfo['intercom'] ?? $orderFields['intercom'] ?? null;
+        $order->delivery_comment = $orderFields['comment'] ?? null;
 
         // Полный адрес доставки
         $addressParts = [];
