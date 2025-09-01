@@ -3,10 +3,12 @@
 namespace App\Models\EVO;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
  * Class EvoCommerceOrders
- * 
+ *
  * @property int $id
  * @property int $notify
  * @property int $default
@@ -24,4 +26,13 @@ class EvoCommerceOrders extends Model
 		'id',
 	];
 
+	public function status(): BelongsTo
+	{
+		return $this->belongsTo(EvoCommerceOrderStatuses::class, 'status_id');
+	}
+
+	public function products(): HasMany
+    {
+		return $this->hasMany(EvoCommerceOrderProducts::class, 'order_id');
+	}
 }

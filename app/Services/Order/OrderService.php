@@ -256,27 +256,53 @@ class OrderService
         ];
     }
 
-    private function calculatePromocodesDiscount(array $products, array $promocodes): float
+    private function calculatePromocodesDiscount(array $cartData): float
     {
-        if (empty($promocodes)) {
-            return 0;
-        }
-
         $discount = 0;
 
-        // Проверяем в разных местах структуры ответа корзины
-        if (isset($products['cart']['totals']['promocodes_discount'])) {
-            $discount = (float)$products['cart']['totals']['promocodes_discount'];
-        } elseif (isset($products['cart']['promocodes_info']['total_discount'])) {
-            $discount = (float)$products['cart']['promocodes_info']['total_discount'];
-        } elseif (isset($products['promocodes_discount'])) {
-            $discount = (float)$products['promocodes_discount'];
+        if (isset($cartData['cart']['totals']['discount_only_promos'])) {
+            $discount = (float) $cartData['cart']['totals']['discount_only_promos'];
+            return $discount;
         }
 
-        Log::info('Promocodes discount calculated', [
-            'promocodes' => $promocodes,
-            'discount' => $discount
-        ]);
+        if (isset($cartData['cart']['products']) && is_array($cartData['cart']['products'])) {
+            foreach ($cartData['cart']['products'] as $product) {
+                if (isset($product['product_totals']['total_discount_only_promos'])) {
+                    $discount += (float) $product['product_totals']['total_discount_only_promos'];
+                }
+            }
+            if ($discount > 0) {
+                return $discount;
+            }
+        }
+
+        $fallbackPaths = [
+            'cart.totals.promocode_discount',
+            'cart.totals.promo_discount',
+            'cart.promocode_discount',
+            'totals.discount_only_promos',
+            'totals.promocode_discount',
+            'promocode_discount'
+        ];
+
+        foreach ($fallbackPaths as $path) {
+            $pathParts = explode('.', $path);
+            $value = $cartData;
+
+            foreach ($pathParts as $part) {
+                if (isset($value[$part])) {
+                    $value = $value[$part];
+                } else {
+                    $value = null;
+                    break;
+                }
+            }
+
+            if (is_numeric($value) && $value > 0) {
+                $discount = (float) $value;
+                break;
+            }
+        }
 
         return $discount;
     }
@@ -625,35 +651,27 @@ class OrderService
             return $orders;
         }
 
-        $allProductIds = collect();
+        $orderIds = $orders->pluck('id')->toArray();
+        $orderProducts = $this->EvoCommerceOrderProducts->query()
+            ->whereIn('order_id', $orderIds)
+            ->get()
+            ->groupBy('order_id');
 
-        foreach ($orders as $order) {
-            if (isset($order->order_products_json) && is_array($order->order_products_json)) {
-                $productIds = collect($order->order_products_json)
-                    ->pluck('product_id')
-                    ->unique()
-                    ->values();
-                $allProductIds = $allProductIds->merge($productIds);
-            }
-        }
+        return $orders->transform(function($order) use ($orderProducts) {
+            $products = $orderProducts->get($order->id, collect());
 
-        $allProductIds = $allProductIds->unique()->values()->toArray();
-        $productsFullInfo = $this->getProductsInfo($allProductIds);
-
-        return $orders->transform(function($order) use ($productsFullInfo) {
-            if (!isset($order->order_products_json) || !is_array($order->order_products_json)) {
-                Log::warning('order_products_json is not valid array', [
-                    'order_id' => $order->id ?? 'unknown',
-                    'type' => gettype($order->order_products_json ?? null)
-                ]);
-                return $order;
-            }
-
-            $enrichedProducts = collect($order->order_products_json)
-                ->map(function($product) use ($productsFullInfo) {
-                    return $this->enrichProductWithFullInfo($product, $productsFullInfo);
-                })
-                ->toArray();
+            $order->order_products_json = $products->map(function($product) {
+                $options = $this->safeJsonDecode($product->options) ?? [];
+                return [
+                    'product_id' => $product->product_id,
+                    'pharmacy_id' => $options['pharmacy_id'] ?? null,
+                    'product_title' => $product->title,
+                    'price' => $product->price,
+                    'position' => $product->position,
+                    'count' => $product->count,
+                    'options' => $options
+                ];
+            })->toArray();
 
             $orderFields = $this->safeJsonDecode($order->fields) ?? [];
 
@@ -782,12 +800,27 @@ class OrderService
     {
         $deliveryTitles = $this->getDeliveryTitles($delivery);
 
-        $orders = $this->OrderViewJson->query()
-            ->select('*') // Явно выбираем все поля включая order_products_json
+        $orders = $this->EvoCommerceOrders->query()
+            ->select([
+                'id as order_id',
+                'id',
+                'customer_id',
+                'created_at',
+                'updated_at',
+                'phone',
+                'name',
+                'email',
+                'amount',
+                'currency',
+                'status_id',
+                'fields'
+            ])
+            ->with(['status:id,title'])
             ->where('customer_id', $userId)
             ->when(!empty($number), fn($query) => $query->where('id', $number))
-            ->when((!empty($isActive) && $isActive == 1), fn($query) => $query->whereNotIn('status_title', INACTIVE_STATUSES))
-            ->when(!empty($delivery), fn($query) => $query->whereIn('delivery_method_title', $deliveryTitles))
+            ->when((!empty($isActive) && $isActive == 1), fn($query) => $query->whereHas('status', function($q) {
+                $q->whereNotIn('title', INACTIVE_STATUSES);
+            }))
             ->orderBy('id', 'desc')
             ->get();
 
