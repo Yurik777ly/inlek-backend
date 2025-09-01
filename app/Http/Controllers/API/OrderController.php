@@ -74,21 +74,28 @@ class OrderController extends Controller
 
         if (!$order->isEmpty()) {
             $orderData = $order->first();
+            $orderArray = $orderData->toArray();
+            
+            // Parse fields JSON if it's a string to extract price data
+            $fields = null;
+            if (isset($orderArray['fields']) && is_string($orderArray['fields'])) {
+                $fields = json_decode($orderArray['fields'], true);
+            }
 
             $response = [
-                'order' => $orderData,
+                'order' => $orderArray,
                 'summary' => [
-                    'products_price' => $orderData->prices_sum ?? 0,
-                    'products_price_old' => $orderData->old_prices_sum ?? 0,
-                    'discount_percent' => $orderData->old_prices_sale_sum ?? 0,
+                    'products_price' => $fields['sum']['pricesSum'] ?? ($orderData->sum_prices ?? 0),
+                    'products_price_old' => $fields['sum']['oldPricesSum'] ?? ($orderData->sum_prices_old ?? 0),
+                    'discount_percent' => $fields['sum']['oldPricesSaleSum'] ?? ($orderData->sum_prices_sales_old ?? 0),
                     'discount_amount' => $orderData->discount_amount ?? 0,
                     'promocodes_discount' => $orderData->promocodes_discount ?? 0,
-                    'delivery_price' => $orderData->delivery_sum ?? 0,
-                    'total_price' => $orderData->total_sum ?? 0,
+                    'delivery_price' => $fields['sum']['deliverySum'] ?? ($orderData->delivery_sum ?? 0),
+                    'total_price' => $fields['sum']['totalSum'] ?? ($orderData->total_sum ?? 0),
                 ],
                 'delivery_info' => [
-                    'method' => $orderData->delivery_method ?? null,
-                    'method_title' => $orderData->delivery_method_title ?? null,
+                    'method' => $fields['delivery_method'] ?? ($orderData->delivery_method ?? null),
+                    'method_title' => $fields['delivery_method_title'] ?? ($orderData->delivery_method_title ?? null),
                     'address' => $orderData->full_delivery_address ?? null,
                     'is_delivery' => $orderData->is_delivery ?? false,
                     'entrance' => $orderData->delivery_entrance ?? null,
@@ -98,8 +105,8 @@ class OrderController extends Controller
                     'comment' => $orderData->delivery_comment ?? null,
                 ],
                 'payment_info' => [
-                    'method' => $orderData->payment_method ?? null,
-                    'method_title' => $orderData->payment_method_title ?? null,
+                    'method' => $fields['payment_method'] ?? ($orderData->payment_method ?? null),
+                    'method_title' => $fields['payment_method_title'] ?? ($orderData->payment_method_title ?? null),
                 ],
                 'additional' => [
                     'comment' => $orderData->comment ?? '',
@@ -128,7 +135,36 @@ class OrderController extends Controller
             'is_active' => 'nullable|int',
         ]);
         $orders = $this->OrderService->getList($userId, $validated['is_active'] ?? null, $validated['number'] ?? null, $validated['delivery'] ?? null);
-        return $this->responseOk(data: $orders);
+        
+        // Transform orders to match frontend expectations
+        $transformedOrders = $orders->map(function($order) {
+            $orderArray = $order->toArray();
+            
+            // Parse fields JSON if it's a string
+            if (isset($orderArray['fields']) && is_string($orderArray['fields'])) {
+                $fields = json_decode($orderArray['fields'], true);
+                if ($fields) {
+                    // Extract structured data from fields
+                    $orderArray = array_merge($orderArray, [
+                        'sum_prices' => $fields['sum']['pricesSum'] ?? 0,
+                        'sum_prices_old' => $fields['sum']['oldPricesSum'] ?? 0,
+                        'sum_prices_sales_old' => $fields['sum']['oldPricesSaleSum'] ?? 0,
+                        'delivery_sum' => $fields['sum']['deliverySum'] ?? 0,
+                        'total_sum' => $fields['sum']['totalSum'] ?? 0,
+                        'delivery_method' => $fields['delivery_method'] ?? null,
+                        'delivery_method_title' => $fields['delivery_method_title'] ?? null,
+                        'payment_method' => $fields['payment_method'] ?? null,
+                        'payment_method_title' => $fields['payment_method_title'] ?? null,
+                    ]);
+                }
+                // Remove the raw fields to avoid confusion
+                unset($orderArray['fields']);
+            }
+            
+            return $orderArray;
+        });
+        
+        return $this->responseOk(data: $transformedOrders);
     }
 
     /**
