@@ -620,43 +620,49 @@ class OrderService
 
     private function enrichOrdersWithProductInfo(Collection $orders): Collection
     {
-        $firstOrder = $orders->first();
-
-        // Проверяем что order_products_json существует и является массивом
-        if (!isset($firstOrder->order_products_json) || !is_array($firstOrder->order_products_json)) {
-            Log::warning('order_products_json is not valid array', [
-                'order_id' => $firstOrder->id ?? 'unknown',
-                'type' => gettype($firstOrder->order_products_json ?? null)
-            ]);
+        if ($orders->isEmpty()) {
             return $orders;
         }
 
-        $productIds = collect($firstOrder->order_products_json)
-            ->pluck('product_id')
-            ->unique()
-            ->values()
-            ->toArray();
+        $allProductIds = collect();
 
-        $productsFullInfo = $this->getProductsInfo($productIds);
+        foreach ($orders as $order) {
+            if (isset($order->order_products_json) && is_array($order->order_products_json)) {
+                $productIds = collect($order->order_products_json)
+                    ->pluck('product_id')
+                    ->unique()
+                    ->values();
+                $allProductIds = $allProductIds->merge($productIds);
+            }
+        }
 
-        // Обогащаем товары заказа
-        $enrichedProducts = collect($firstOrder->order_products_json)
-            ->map(function($product) use ($productsFullInfo) {
-                return $this->enrichProductWithFullInfo($product, $productsFullInfo);
-            })
-            ->toArray();
+        $allProductIds = $allProductIds->unique()->values()->toArray();
+        $productsFullInfo = $this->getProductsInfo($allProductIds);
 
-        $orderFields = $this->safeJsonDecode($firstOrder->fields) ?? [];
+        return $orders->transform(function($order) use ($productsFullInfo) {
+            if (!isset($order->order_products_json) || !is_array($order->order_products_json)) {
+                Log::warning('order_products_json is not valid array', [
+                    'order_id' => $order->id ?? 'unknown',
+                    'type' => gettype($order->order_products_json ?? null)
+                ]);
+                return $order;
+            }
 
-        // Получаем информацию об аптеке
-        $firstPharmacyId = collect($firstOrder->order_products_json)
-            ->pluck('pharmacy_id')
-            ->filter()
-            ->first();
+            $enrichedProducts = collect($order->order_products_json)
+                ->map(function($product) use ($productsFullInfo) {
+                    return $this->enrichProductWithFullInfo($product, $productsFullInfo);
+                })
+                ->toArray();
 
-        $pharmacy = $this->getPharmacyInfo($firstPharmacyId);
+            $orderFields = $this->safeJsonDecode($order->fields) ?? [];
 
-        return $orders->transform(function($order) use ($pharmacy, $orderFields, $enrichedProducts) {
+            $firstPharmacyId = collect($order->order_products_json)
+                ->pluck('pharmacy_id')
+                ->filter()
+                ->first();
+
+            $pharmacy = $this->getPharmacyInfo($firstPharmacyId);
+
             return $this->transformOrderWithEnrichedData($order, $pharmacy, $orderFields, $enrichedProducts);
         });
     }
@@ -709,12 +715,24 @@ class OrderService
     {
         $sumData = $orderFields['sum'] ?? [];
 
-        $order->prices_sum = $sumData['pricesSum'] ?? 0;
-        $order->old_prices_sum = $sumData['oldPricesSum'] ?? 0;
+        $order->prices_sum = $sumData['pricesSum'] ?? $order->amount ?? 0;
+        $order->old_prices_sum = $sumData['oldPricesSum'] ?? $order->amount ?? 0;
         $order->old_prices_sale_sum = $sumData['oldPricesSaleSum'] ?? 0;
         $order->delivery_sum = $sumData['deliverySum'] ?? 0;
-        $order->total_sum = $sumData['totalSum'] ?? 0;
+        $order->total_sum = $sumData['totalSum'] ?? $order->amount ?? 0;
         $order->promocodes_discount = $sumData['promocodesDiscount'] ?? 0;
+
+        if ($order->prices_sum == 0 && isset($order->order_products_json) && is_array($order->order_products_json)) {
+            $calculatedSum = 0;
+            foreach ($order->order_products_json as $product) {
+                $calculatedSum += ($product['price'] ?? 0) * ($product['count'] ?? 1);
+            }
+            if ($calculatedSum > 0) {
+                $order->prices_sum = $calculatedSum;
+                $order->total_sum = $calculatedSum + $order->delivery_sum;
+            }
+        }
+
         $order->promocodes = $orderFields['promocodes'] ?? [];
         $order->comment = $orderFields['comment'] ?? '';
 
@@ -763,13 +781,19 @@ class OrderService
     {
         $deliveryTitles = $this->getDeliveryTitles($delivery);
 
-        return $this->OrderViewJson->query()
+        $orders = $this->OrderViewJson->query()
             ->where('customer_id', $userId)
             ->when(!empty($number), fn($query) => $query->where('id', $number))
             ->when((!empty($isActive) && $isActive == 1), fn($query) => $query->whereNotIn('status_title', INACTIVE_STATUSES))
             ->when(!empty($delivery), fn($query) => $query->whereIn('delivery_method_title', $deliveryTitles))
             ->orderBy('id', 'desc')
             ->get();
+
+        if ($orders->isNotEmpty()) {
+            return $this->enrichOrdersWithProductInfo($orders);
+        }
+
+        return $orders;
     }
 
     private function getDeliveryTitles(?array $delivery): array
