@@ -49,6 +49,7 @@ select eso.id                                                    AS product_id,
        availability.is_available,
        eppvj.promocodes_json,
        epavj.action_json,
+       epcj.categories_json,
        json_object(
                'product_id', eso.id,
                'pagetitle', eso.pagetitle,
@@ -199,4 +200,7 @@ from evo_site_content eso
     from evo_offers
     group by product_id
 ) availability on (eso.id = availability.product_id)
+         left join evo_product_categories_json epcj on (
+    eso.id = epcj.product_id
+    )
 where eso.template = 5;
