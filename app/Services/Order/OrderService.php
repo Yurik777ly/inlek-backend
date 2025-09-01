@@ -607,6 +607,7 @@ class OrderService
     public function getDetailed(string $userId, int $orderId): Collection
     {
         $orders = $this->OrderViewJson->query()
+            ->select('*') // Явно выбираем все поля включая order_products_json
             ->where('customer_id', $userId)
             ->where('id', $orderId)
             ->get();
@@ -782,6 +783,7 @@ class OrderService
         $deliveryTitles = $this->getDeliveryTitles($delivery);
 
         $orders = $this->OrderViewJson->query()
+            ->select('*') // Явно выбираем все поля включая order_products_json
             ->where('customer_id', $userId)
             ->when(!empty($number), fn($query) => $query->where('id', $number))
             ->when((!empty($isActive) && $isActive == 1), fn($query) => $query->whereNotIn('status_title', INACTIVE_STATUSES))

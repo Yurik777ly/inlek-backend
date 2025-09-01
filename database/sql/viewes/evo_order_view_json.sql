@@ -1,6 +1,7 @@
 create or replace view evo_order_view_json as
 select
     eco.id as order_id,
+    eco.id as id,
     eco.customer_id,
     eco.created_at,
     eco.updated_at,
@@ -42,38 +43,19 @@ select
     json_unquote(json_extract(eco.fields, '$.payment_method_title')) as payment_method_title,
     json_arrayagg(
             json_object(
-                    'product_id', epovj.product_id,
-                    'pharmacy_id', epovj.pharmacy_id,
-                    'product_title', epovj.product_title,
-                    'price', epovj.price,
-                    'pharmacy_price', epovj.pharmacy_price,
-                    'position', epovj.position,
-                    'count', epovj.count,
-                    'alias', epovj.alias,
-                    'mnn', epovj.mnn,
-                    'code', epovj.code,
-                    'brand', epovj.brand,
-                    'country', epovj.country,
-                    'release_form', epovj.release_form,
-                    'termin', epovj.termin,
-                    'temperature', epovj.temperature,
-                    'image', epovj.image,
-                    'dose', epovj.dose,
-                    'recipe', epovj.recipe,
-                    'is_recipe', epovj.is_recipe,
-                    'is_alcohol', epovj.is_alcohol,
-                    'product_insert', epovj.product_insert,
-                    'product_time_register', epovj.product_time_register,
-                    'product_register', epovj.product_register,
-                    'product_date_register', epovj.product_date_register,
-                    'product_trademark', epovj.product_trademark,
-                    'product_sticker', epovj.product_sticker
+                    'product_id', ecop.product_id,
+                    'pharmacy_id', CAST(JSON_UNQUOTE(JSON_EXTRACT(ecop.options, '$.pharmacy_id')) AS UNSIGNED),
+                    'product_title', ecop.title,
+                    'price', ecop.price,
+                    'position', ecop.position,
+                    'count', ecop.count,
+                    'options', ecop.options
             )
     ) order_products_json
 from evo_commerce_orders eco
          inner join evo_commerce_order_statuses ecos on (eco.status_id = ecos.id)
-         inner join evo_product_order_view epovj
-                    on eco.id = epovj.order_id
+         inner join evo_commerce_order_products ecop
+                    on eco.id = ecop.order_id
 group by
     eco.id, eco.customer_id, eco.created_at, eco.updated_at, eco.phone, eco.name, eco.email, eco.amount, eco.currency,
     eco.status_id, ecos.title, eco.fields;
