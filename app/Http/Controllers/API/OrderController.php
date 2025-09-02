@@ -57,6 +57,13 @@ class OrderController extends Controller
             ], 400);
         }
 
+        if (is_array($data) && isset($data['created_at'])) {
+            $data['created_at'] = $this->formatDateTimeISO($data['created_at']);
+        }
+        if (is_array($data) && isset($data['updated_at'])) {
+            $data['updated_at'] = $this->formatDateTimeISO($data['updated_at']);
+        }
+
         return response()->json([
             'data' => $data,
             'status' => 'success',
@@ -76,10 +83,16 @@ class OrderController extends Controller
             $orderData = $order->first();
             $orderArray = $orderData->toArray();
 
-            // Parse fields JSON if it's a string to extract price data
             $fields = null;
             if (isset($orderArray['fields']) && is_string($orderArray['fields'])) {
                 $fields = json_decode($orderArray['fields'], true);
+            }
+
+            if (isset($orderArray['created_at'])) {
+                $orderArray['created_at'] = $this->formatDateTimeISO($orderArray['created_at']);
+            }
+            if (isset($orderArray['updated_at'])) {
+                $orderArray['updated_at'] = $this->formatDateTimeISO($orderArray['updated_at']);
             }
 
             $response = [
@@ -153,10 +166,25 @@ class OrderController extends Controller
                 unset($orderArray['fields']);
             }
 
+            if (isset($orderArray['created_at'])) {
+                $orderArray['created_at'] = $this->formatDateTimeISO($orderArray['created_at']);
+            }
+            if (isset($orderArray['updated_at'])) {
+                $orderArray['updated_at'] = $this->formatDateTimeISO($orderArray['updated_at']);
+            }
+
             return $orderArray;
         });
 
         return $this->responseOk(data: $transformedOrders);
+    }
+
+    private function formatDateTimeISO($dateTime): string
+    {
+        if (is_string($dateTime)) {
+            $dateTime = \Carbon\Carbon::parse($dateTime);
+        }
+        return $dateTime->utc()->toISOString();
     }
 
     /**

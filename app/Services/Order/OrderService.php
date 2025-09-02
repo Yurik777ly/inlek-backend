@@ -723,11 +723,26 @@ class OrderService
         $order->pharmacy_id = $pharmacy?->pharmacy_id;
         $order->order_products_json = $enrichedProducts;
 
+        if (isset($order->created_at)) {
+            $order->created_at = $this->formatDateTimeISO($order->created_at);
+        }
+        if (isset($order->updated_at)) {
+            $order->updated_at = $this->formatDateTimeISO($order->updated_at);
+        }
+
         if (!empty($orderFields)) {
             $this->fillOrderFieldsFromJson($order, $orderFields);
         }
 
         return $order;
+    }
+
+    private function formatDateTimeISO($dateTime): string
+    {
+        if (is_string($dateTime)) {
+            $dateTime = \Carbon\Carbon::parse($dateTime);
+        }
+        return $dateTime->utc()->toISOString();
     }
 
     private function fillOrderFieldsFromJson($order, array $orderFields): void
