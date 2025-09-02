@@ -682,7 +682,7 @@ class OrderService
 
             $pharmacy = $this->getPharmacyInfo($firstPharmacyId);
 
-            return $this->transformOrderWithEnrichedData($order, $pharmacy, $orderFields, $enrichedProducts);
+            return $this->transformOrderWithEnrichedData($order, $pharmacy, $orderFields, $order->order_products_json);
         });
     }
 
