@@ -97,14 +97,15 @@ class OrderController extends Controller
 
             $response = [
                 'order' => $orderArray,
+                'products' => $orderData->order_products_json ?? [],
                 'summary' => [
-                    'products_price' => $fields['sum']['pricesSum'] ?? ($orderData->sum_prices ?? 0),
-                    'products_price_old' => $fields['sum']['oldPricesSum'] ?? ($orderData->sum_prices_old ?? 0),
-                    'discount_percent' => $fields['sum']['oldPricesSaleSum'] ?? ($orderData->sum_prices_sales_old ?? 0),
-                    'discount_amount' => $orderData->discount_amount ?? 0,
-                    'promocodes_discount' => $orderData->promocodes_discount ?? 0,
-                    'delivery_price' => $fields['sum']['deliverySum'] ?? ($orderData->delivery_sum ?? 0),
-                    'total_price' => $fields['sum']['totalSum'] ?? ($orderData->total_sum ?? 0),
+                    'products_price' => round($fields['sum']['pricesSum'] ?? ($orderData->sum_prices ?? 0), 2),
+                    'products_price_old' => round($fields['sum']['oldPricesSum'] ?? ($orderData->sum_prices_old ?? 0), 2),
+                    'discount_percent' => round($fields['sum']['oldPricesSaleSum'] ?? ($orderData->sum_prices_sales_old ?? 0), 2),
+                    'discount_amount' => round($orderData->discount_amount ?? 0, 2),
+                    'promocodes_discount' => round($fields['sum']['promocodesDiscount'] ?? ($orderData->promocodes_discount ?? 0), 2),
+                    'delivery_price' => round($fields['sum']['deliverySum'] ?? ($orderData->delivery_sum ?? 0), 2),
+                    'total_price' => round($fields['sum']['totalSum'] ?? ($orderData->total_sum ?? 0), 2),
                 ],
                 'delivery_info' => [
                     'method' => $fields['delivery_method'] ?? ($orderData->delivery_method ?? null),
@@ -125,7 +126,7 @@ class OrderController extends Controller
                     'comment' => $orderData->comment ?? '',
                     'has_discount' => $orderData->has_discount ?? false,
                     'has_promocodes' => $orderData->has_promocodes ?? false,
-                    'promocodes' => $orderData->promocodes ?? [],
+                    'promocodes' => $this->extractPromocodes($orderData, $fields),
                 ]
             ];
 
@@ -133,6 +134,28 @@ class OrderController extends Controller
         }
 
         return $this->responseOk(data: $order);
+    }
+
+    private function extractPromocodes($orderData, ?array $fields): array
+    {
+        $promocodes = [];
+
+        if ($fields && isset($fields['promocodes'])) {
+            $promocodes = is_array($fields['promocodes']) ? $fields['promocodes'] : [$fields['promocodes']];
+        }
+
+        if (empty($promocodes) && isset($orderData->promocodes)) {
+            if (is_string($orderData->promocodes)) {
+                $promocodes = array_filter(explode('|', $orderData->promocodes));
+                if (empty($promocodes)) {
+                    $promocodes = array_filter(explode(',', $orderData->promocodes));
+                }
+            } elseif (is_array($orderData->promocodes)) {
+                $promocodes = $orderData->promocodes;
+            }
+        }
+
+        return array_values(array_filter(array_map('trim', $promocodes)));
     }
 
     /**
