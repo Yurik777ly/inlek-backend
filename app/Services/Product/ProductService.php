@@ -126,7 +126,7 @@ class ProductService
         return $daily;
     }
 
-    public function getFilteredProducts(ProductDTO $productDto, $perPage=10, $page)//: array|LengthAwarePaginator
+    public function getFilteredProducts(ProductDTO $productDto, int $perPage = 20, int $page = 1): LengthAwarePaginator
     {
         $priceFilter =
             $this->ProductInfoViewJsonFilter->query()
@@ -143,10 +143,10 @@ class ProductService
                 return $query->whereIn('brand', $productDto->brand);
             })
             ->when((isset($productDto->recipe)) && $productDto->recipe == false, function($query) use($productDto) {
-                return $query->where(fn($q) => $q->where('recipe', 'no')->orWhereNull('recipe')->orWhere('recipe', ''));
+                return $query->whereRaw("JSON_EXTRACT(product_charachters, '$.is_recipe') = 'false'");
             })
             ->when((isset($productDto->recipe)) && $productDto->recipe == true, function($query) use($productDto) {
-                 return $query->where('recipe', 'yes');
+                return $query->whereRaw("JSON_EXTRACT(product_charachters, '$.is_recipe') = 'true'");
             })
             ->when(!empty($productDto->country), function($query) use($productDto) {
                 return $query->whereIn('country', $productDto->country);
