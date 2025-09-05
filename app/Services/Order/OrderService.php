@@ -134,7 +134,7 @@ class OrderService
 
         foreach ($fields as $field) {
             if (empty($user->{$field})) {
-                $user->{$field} = $orderArray[$field];
+                $user->{$field} = $orderArray[$field] ?? null;
             }
         }
 
