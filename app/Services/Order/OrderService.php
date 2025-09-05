@@ -128,12 +128,17 @@ class OrderService
 
     private function updateUserInfo(array $orderArray): void
     {
-        auth()->user()->update([
-            'phone' => $orderArray['phone'],
-            'first_name' => $orderArray['first_name'],
-            'last_name' => $orderArray['last_name'],
-            'email' => $orderArray['email'] ?? null,
-        ]);
+        $user = auth()->user();
+
+        $fields = ['phone', 'first_name', 'last_name', 'email'];
+
+        foreach ($fields as $field) {
+            if (empty($user->{$field})) {
+                $user->{$field} = $orderArray[$field];
+            }
+        }
+
+        $user->save();
     }
 
     private function getCartData(array $orderArray): array
