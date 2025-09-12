@@ -135,6 +135,7 @@ class ProfileService
      */
     public function deleteProfile(User $user): void
     {
+        /** @var User $user */
         $user = $this->User->query()->where('id', $user->id)->firstOrFail();
         $this->SMS->query()->where('phone', $user->phone)->delete();
 
@@ -150,6 +151,6 @@ class ProfileService
                 acceptPolicy: $user->accept_policy
         );
 */
-        $user->delete();
+        $user->forceDelete();
     }
 }
