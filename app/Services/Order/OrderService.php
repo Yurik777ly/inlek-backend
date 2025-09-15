@@ -573,6 +573,7 @@ class OrderService
         if (!empty($orderArray['city'])) $addressParts[] = $orderArray['city'];
         if (!empty($orderArray['address'])) $addressParts[] = $orderArray['address'];
         if (!empty($orderArray['entrance'])) $addressParts[] = 'подъезд ' . $orderArray['entrance'];
+        if (!empty($orderArray['intercom'])) $addressParts[] = 'домофон ' . $orderArray['intercom'];
         if (!empty($orderArray['floor'])) $addressParts[] = 'этаж ' . $orderArray['floor'];
         if (!empty($orderArray['apartment'])) $addressParts[] = 'кв. ' . $orderArray['apartment'];
 
@@ -810,6 +811,7 @@ class OrderService
         if (!empty($deliveryInfo['city'])) $addressParts[] = $deliveryInfo['city'];
         if (!empty($deliveryInfo['street'])) $addressParts[] = $deliveryInfo['street'];
         if (!empty($deliveryInfo['entrance'])) $addressParts[] = 'подъезд ' . $deliveryInfo['entrance'];
+        if (!empty($deliveryInfo['intercom'])) $addressParts[] = 'домофон ' . $deliveryInfo['intercom'];
         if (!empty($deliveryInfo['floor'])) $addressParts[] = 'этаж ' . $deliveryInfo['floor'];
         if (!empty($deliveryInfo['apartment'])) $addressParts[] = 'кв. ' . $deliveryInfo['apartment'];
 
