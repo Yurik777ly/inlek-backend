@@ -583,6 +583,7 @@ class OrderService
         if (!empty($orderArray['entrance'])) $addressParts[] = 'подъезд ' . $orderArray['entrance'];
         if (!empty($orderArray['floor'])) $addressParts[] = 'этаж ' . $orderArray['floor'];
         if (!empty($orderArray['apartment'])) $addressParts[] = 'кв. ' . $orderArray['apartment'];
+        if (!empty($orderArray['intercom'])) $addressParts[] = 'домофон ' . $orderArray['intercom'];
 
         return !empty($addressParts) ? implode(', ', $addressParts) : null;
     }
@@ -850,6 +851,7 @@ class OrderService
         if (!empty($deliveryInfo['entrance'])) $addressParts[] = 'подъезд ' . $deliveryInfo['entrance'];
         if (!empty($deliveryInfo['floor'])) $addressParts[] = 'этаж ' . $deliveryInfo['floor'];
         if (!empty($deliveryInfo['apartment'])) $addressParts[] = 'кв. ' . $deliveryInfo['apartment'];
+        if (!empty($deliveryInfo['intercom'])) $addressParts[] = 'домофон ' . $deliveryInfo['intercom'];
 
         $order->full_delivery_address = !empty($addressParts) ? implode(', ', $addressParts) : null;
     }
