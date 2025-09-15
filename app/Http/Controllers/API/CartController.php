@@ -134,42 +134,43 @@ class CartController extends Controller
         $orders = $this->OrderService->getDetailed($userId, $orderId);
 
         if ($orders->isEmpty()) {
-            return $this->responseError('Заказ не найден', 404);
+            return $this->response('Заказ не найден', 404);
         }
 
         $order = $orders->first();
 
         // Проверяем наличие продуктов в заказе
         if (empty($order->order_products_json)) {
-            return $this->responseError('В заказе нет товаров для повтора', 400);
+            return $this->response('В заказе нет товаров для повтора', 400);
         }
 
-        $addedProducts = [];
-        $failedProducts = [];
+        $productsToAdd = collect($order->order_products_json)->map(function ($item) {
+            return [
+                'product_id' => $item['product_id'],
+                'quantity' => $item['count'],
+            ];
+        })->all();
 
-        foreach ($order->order_products_json as $item) {
-            try {
-                $cartDTO = new CartDTO(
-                    user: $request->user(),
-                    cart: $request->user()->cart,
-                    product_id: $item['product_id'],
-                    quantity: $item['count']
-                );
-
-                $this->CartService->addToCart($cartDTO);
-                $addedProducts[] = [
+        try {
+            $this->CartService->addMultipleToCart($request->user(), $productsToAdd);
+            $addedProducts = collect($order->order_products_json)->map(function($item) {
+                return [
                     'product_id' => $item['product_id'],
                     'title' => $item['title'] ?? 'Товар',
                     'quantity' => $item['count']
                 ];
-            } catch (\Exception $e) {
-                $failedProducts[] = [
+            })->all();
+            $failedProducts = [];
+        } catch (\Exception $e) {
+            $addedProducts = [];
+            $failedProducts = collect($order->order_products_json)->map(function($item) {
+                return [
                     'product_id' => $item['product_id'],
                     'title' => $item['title'] ?? 'Товар',
                     'quantity' => $item['count'],
-                    'error' => 'Не удалось добавить товар в корзину'
+                    'error' => 'Не удалось добавить товары в корзину: '
                 ];
-            }
+            })->all();
         }
 
         return $this->responseOk([

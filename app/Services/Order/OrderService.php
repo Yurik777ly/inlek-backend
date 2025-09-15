@@ -404,17 +404,25 @@ class OrderService
 
     private function saveOrderProducts(int $orderId, array $orderProducts, int $pharmacyId): void
     {
-        foreach ($orderProducts as $orderProduct) {
-            $orderProduct['order_id'] = $orderId;
-            $productObj = new EvoCommerceOrderProducts();
-            $productObj->fill($orderProduct)->save();
+        $productsToInsert = collect($orderProducts)->map(function ($product) use ($orderId) {
+            $product['order_id'] = $orderId;
+            // Добавляем таймстемпы для массовой вставки, если Eloquent не делает это автоматически
+            $product['created_at'] = now();
+            $product['updated_at'] = now();
+            return $product;
+        })->all();
+
+        if (!empty($productsToInsert)) {
+            // Используем массовую вставку для производительности
+            EvoCommerceOrderProducts::insert($productsToInsert);
         }
     }
 
     private function clearCartProducts(array $productIds): void
     {
-        foreach ($productIds as $productId) {
-            auth()->user()->cart->products()->detach($productId);
+        if (!empty($productIds)) {
+            // Используем detach с массивом ID для выполнения одного запроса
+            auth()->user()->cart->products()->detach($productIds);
         }
     }
 
@@ -657,13 +665,22 @@ class OrderService
         }
 
         $orderIds = $orders->pluck('id')->toArray();
-        $orderProducts = $this->EvoCommerceOrderProducts->query()
+        $orderProductsByOrderId = $this->EvoCommerceOrderProducts->query()
             ->whereIn('order_id', $orderIds)
             ->get()
             ->groupBy('order_id');
 
-        return $orders->transform(function($order) use ($orderProducts) {
-            $products = $orderProducts->get($order->id, collect());
+        // N+1 Fix: Собираем все ID аптек из всех заказов
+        $pharmacyIds = collect($orderProductsByOrderId)->flatten()->map(function ($product) {
+            $options = $this->safeJsonDecode($product->options) ?? [];
+            return $options['pharmacy_id'] ?? null;
+        })->filter()->unique()->toArray();
+
+        // N+1 Fix: Загружаем информацию по всем аптекам одним запросом
+        $pharmaciesById = $this->getPharmaciesInfo($pharmacyIds);
+
+        return $orders->transform(function($order) use ($orderProductsByOrderId, $pharmaciesById) {
+            $products = $orderProductsByOrderId->get($order->id, collect());
 
             $order->order_products_json = $products->map(function($product) {
                 $options = $this->safeJsonDecode($product->options) ?? [];
@@ -685,7 +702,8 @@ class OrderService
                 ->filter()
                 ->first();
 
-            $pharmacy = $this->getPharmacyInfo($firstPharmacyId);
+            // N+1 Fix: Получаем аптеку из заранее загруженной коллекции
+            $pharmacy = $pharmaciesById->get($firstPharmacyId);
 
             return $this->transformOrderWithEnrichedData($order, $pharmacy, $orderFields, $order->order_products_json);
         });
@@ -718,6 +736,26 @@ class OrderService
         } catch (\Exception $e) {
             Log::warning('Pharmacy info not available', ['pharmacy_id' => $pharmacyId]);
             return null;
+        }
+    }
+
+    /**
+     * N+1 Fix: Загружает информацию по нескольким аптекам одним запросом.
+     */
+    private function getPharmaciesInfo(array $pharmacyIds): Collection
+    {
+        if (empty($pharmacyIds)) {
+            return collect();
+        }
+
+        try {
+            return DB::table('evo_pharmacies_view')
+                ->whereIn('pharmacy_id', $pharmacyIds)
+                ->get()
+                ->keyBy('pharmacy_id');
+        } catch (\Exception $e) {
+            Log::warning('Не получили информацию: ', ['pharmacy_ids' => $pharmacyIds]);
+            return collect();
         }
     }
 

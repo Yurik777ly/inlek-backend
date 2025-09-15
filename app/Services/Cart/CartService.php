@@ -49,6 +49,22 @@ class CartService
             }
         }
     }
+
+    public function addMultipleToCart(User $user, array $products): void
+    {
+        if (empty($products)) {
+            return;
+        }
+
+        $cart = $user->cart;
+
+        $itemsToSync = collect($products)->mapWithKeys(function ($item) {
+            return [$item['product_id'] => ['quantity' => $item['quantity']]];
+        })->all();
+
+        $cart->products()->syncWithoutDetaching($itemsToSync);
+    }
+
     public function clearCart(User $user)
     {
         $user->cart->products()->detach();
