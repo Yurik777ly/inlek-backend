@@ -524,11 +524,11 @@ class OrderService
             'discount_amount' => $calculations['discountAmount'],
             'is_delivery' => ($calculations['deliverySum'] > 0),
             'has_promocodes' => ($calculations['promocodesDiscount'] > 0),
+            'order_products_json' => $orderProducts,
         ];
 
         return [
             'order' => $orderData,
-            'order_products_json' => $orderProducts,
             'summary' => [
                 'products_price' => $orderData->prices_sum,
                 'products_price_old' => $orderData->old_prices_sum,
