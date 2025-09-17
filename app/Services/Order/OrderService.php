@@ -85,8 +85,8 @@ class OrderService
 
     public function create($orderArray)
     {
-        try {
-            return DB::transaction(function () use ($orderArray) {
+//        try {
+            DB::transaction(function () use ($orderArray) {
                 // Обновляем информацию о пользователе
                 $this->updateUserInfo($orderArray);
 
@@ -120,10 +120,10 @@ class OrderService
                 // Возвращаем ответ
                 return $this->formatOrderResponse($orderId, $orderArray, $orderCalculations, $processor, $cartData['orderProducts']);
             });
-        } catch (\Exception $e) {
-            Log::error('Order creation failed', ['error' => $e->getMessage(), 'order_data' => $orderArray]);
-            return false;
-        }
+//        } catch (\Exception $e) {
+//            Log::error('Order creation failed', ['error' => $e->getMessage(), 'order_data' => $orderArray]);
+//            return false;
+//        }
     }
 
     private function updateUserInfo(array $orderArray): void
@@ -466,7 +466,7 @@ class OrderService
         }
     }
 
-    private function formatOrderResponse(int $orderId, array $orderArray, array $calculations, ?object $processor, $orderProducts): array
+    private function formatOrderResponse(int $orderId, array $orderArray, array $calculations, ?object $processor, array $orderProducts = []): array
     {
         // Получаем информацию об аптеке
         $pharmacyData = $this->PharmacyService->getPharmacyById($orderArray['pharmacy_id']);
@@ -522,7 +522,7 @@ class OrderService
 
         return [
             'order' => $orderData,
-            'order_products_json' => $orderProducts ?? [],
+            'order_products_json' => $orderProducts,
             'summary' => [
                 'products_price' => $orderData->prices_sum,
                 'products_price_old' => $orderData->old_prices_sum,
