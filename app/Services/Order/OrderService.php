@@ -414,6 +414,7 @@ class OrderService
                 'options' => $product['options'],
                 'meta' => $product['meta'],
                 'position' => $product['position'],
+                'pharmacy_id' => $pharmacyId,
             ];
         })->all();
 

@@ -6,7 +6,7 @@ use Illuminate\Database\Eloquent\Model;
 
 /**
  * Class EvoCommerceOrders
- * 
+ *
  * @property int $id
  * @property int $notify
  * @property int $default
@@ -31,6 +31,7 @@ class EvoCommerceOrderProducts extends Model
                 'options',
                 'meta',
                 'position',
+                'pharmacy_id',
     ];
 
 	protected $hidden = [
