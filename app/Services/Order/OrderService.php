@@ -404,9 +404,18 @@ class OrderService
 
     private function saveOrderProducts(int $orderId, array $orderProducts, int $pharmacyId): void
     {
-        $productsToInsert = collect($orderProducts)->map(function ($product) use ($orderId) {
-            $product['order_id'] = $orderId;
-            return $product;
+        $productsToInsert = collect($orderProducts)->map(function ($product) use ($orderId, $pharmacyId) {
+            return [
+                'order_id' => $orderId,
+                'product_id' => $product['product_id'],
+                'title' => $product['title'],
+                'price' => $product['price'],
+                'count' => $product['count'],
+                'options' => $product['options'],
+                'meta' => $product['meta'],
+                'position' => $product['position'],
+                'pharmacy_id' => $pharmacyId,
+            ];
         })->all();
 
         if (!empty($productsToInsert)) {
