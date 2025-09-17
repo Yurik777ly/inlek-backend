@@ -406,9 +406,6 @@ class OrderService
     {
         $productsToInsert = collect($orderProducts)->map(function ($product) use ($orderId) {
             $product['order_id'] = $orderId;
-            // Добавляем таймстемпы для массовой вставки, если Eloquent не делает это автоматически
-            $product['created_at'] = now();
-            $product['updated_at'] = now();
             return $product;
         })->all();
 
