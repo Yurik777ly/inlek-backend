@@ -86,7 +86,7 @@ class OrderService
     public function create($orderArray)
     {
 //        try {
-            DB::transaction(function () use ($orderArray) {
+            return DB::transaction(function () use ($orderArray) {
                 // Обновляем информацию о пользователе
                 $this->updateUserInfo($orderArray);
 
