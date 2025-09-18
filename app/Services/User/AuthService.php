@@ -99,22 +99,23 @@ class AuthService
             $user = $this->getUser($authDTO);
         }
 
-        if (!empty($user->fcm_token)) {
-            try {
-                FireBase::send(
-                    'Авторизация',
-                    'Совершен вход в личный кабинет',
-                    [$user->fcm_token],
-                    []
-                );
-            } catch (\Exception $e) {
-                // Логируем ошибку, но не прерываем авторизацию
-                \Log::warning('FCM notification failed: ' . $e->getMessage(), [
-                    'user_id' => $user->id,
-                    'fcm_token' => $user->fcm_token
-                ]);
-            }
-        }
+        //ToDo уточнить, нужна ли отправка уведомления при регистрации 
+        // if (!empty($user->fcm_token)) {
+        //     try {
+        //         FireBase::send(
+        //             'Авторизация',
+        //             'Совершен вход в личный кабинет',
+        //             [$user->fcm_token],
+        //             []
+        //         );
+        //     } catch (\Exception $e) {
+        //         // Логируем ошибку, но не прерываем авторизацию
+        //         \Log::warning('FCM notification failed: ' . $e->getMessage(), [
+        //             'user_id' => $user->id,
+        //             'fcm_token' => $user->fcm_token
+        //         ]);
+        //     }
+        // }
 
         //$user->tokens()->delete();
         $token = $user->createToken($user->phone);
