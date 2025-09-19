@@ -11,8 +11,10 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::table('evo_commerce_order_statuses', function (Blueprint $table) {
-            $table->text('notification_body')->nullable();
+        Schema::create('order_status_notifications', function (Blueprint $table) {
+            $table->id();
+            $table->unsignedBigInteger('status_id');
+            $table->string('text');
         });
     }
 
@@ -21,8 +23,6 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::table('evo_commerce_order_statuses', function (Blueprint $table) {
-            $table->dropColumn('notification_body');
-        });
+        Schema::dropIfExists('order_status_notifications');
     }
 };

@@ -1,22 +1,14 @@
 <?php
 
-namespace App\Console\Commands;
+namespace App\Console\Commands\Firebase;
 
-use Illuminate\Console\Command;
+use App\Console\Commands\Firebase\FirebaseCommand;
 use App\Models\SMS;
-use App\Services\Firebase\FirebaseService;
 
 
-class RememberFailedRegistationCommand extends Command
+
+class RememberFailedRegistationCommand extends FirebaseCommand
 {
-
-    protected $firebaseService;
-
-    public function __construct(FirebaseService $firebaseService)
-    {
-        $this->firebaseService = $firebaseService;
-        parent::__construct();
-    }
     protected $signature = 'app:remember-failed-registation 
                             {--hours=24 : Hours after registration started}
                             {--limit=3  : Maximum number of sms_requested_qty}';
@@ -53,8 +45,7 @@ class RememberFailedRegistationCommand extends Command
         if ($incompletedRegistration->count() > 0) {
             foreach($incompletedRegistration as $unconfirmedUser) {
                 $result = $this->firebaseService->sendToDevice(
-                    //$unconfirmedUser->fcm_token,
-                    env('TEST_FCM_TOKEN'),
+                    $unconfirmedUser->fcm_token,
                         [
                             'title' => self::TITLE_MSG,
                             'body'  => self::BODY_MSG,
