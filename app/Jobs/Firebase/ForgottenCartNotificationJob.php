@@ -12,7 +12,7 @@ class ForgottenCartNotificationJob extends BaseFirebaseJob
 
     public function handle(FirebaseService $firebaseService): void
     {
-        $forgottenCarts = Cart::with(['user', 'products'])
+        $forgottenCarts = Cart::with(['user'])
                                         ->whereHas('products')
                                         ->get();
         foreach ($forgottenCarts as $cart) {

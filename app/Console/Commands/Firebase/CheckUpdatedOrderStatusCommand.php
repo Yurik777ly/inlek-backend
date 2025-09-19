@@ -30,8 +30,7 @@ class CheckUpdatedOrderStatusCommand extends FirebaseCommand
                     $notification = OrderStatusNotification::where('id', '=', $order->new_status_id)
                                                            ->get('text')->first();
                     $result = $this->firebaseService->sendToDevice(
-                    //           $order->user->fcm_token,
-                    env('TEST_FCM_TOKEN'),
+                           $order->user->fcm_token,
                         [
                             'title' => self::TITLE_MSG,
                             'body'  => $notification ? $notification->text : self::DEFAULT_MSG,

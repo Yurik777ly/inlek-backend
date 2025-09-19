@@ -4,6 +4,8 @@ namespace App\Models\EVO;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use App\Models\User;
+use App\Models\Cart;
 
 /**
  * Class EvoSiteContent
@@ -122,4 +124,13 @@ class EvoSiteContent extends Model
     {
         return $this->belongsToMany(Cart::class)->withPivot('quantity');
     }
+
+	public function users():BelongsToMany
+	{
+		return $this->belongsToMany(
+            User::class,
+            'notificate_product_user',
+            'product_id',
+            'user_id');
+	}
 }
