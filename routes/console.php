@@ -1,6 +1,7 @@
 <?php
 
 use App\Console\Commands\Firebase\CheckForgottenCartCommand;
+use App\Console\Commands\Firebase\NotifyUserProductCommand;
 use App\Console\Commands\Firebase\RememberFailedRegistationCommand;
 use App\Console\Commands\Firebase\CheckUpdatedOrderStatusCommand;
 use App\Console\Commands\Firebase\SendPromotionsCommand;
@@ -15,6 +16,7 @@ Artisan::command('inspire', function () {
 
 
 Schedule::command(RememberFailedRegistationCommand::class)
+    ->daily()
     ->timezone('Europe/Moscow')
     ->at('11:00')
     ->appendOutputTo(storage_path('logs/firebase/reminders-24h.log'));
@@ -34,4 +36,10 @@ Schedule::command(SendNewsCommand::class)
 Schedule::command(CheckForgottenCartCommand::class)
     ->weekly()
     ->appendOutputTo(storage_path('logs/firebase/forgotten_cart_notifications.log'));
+
+Schedule::command(NotifyUserProductCommand::class)
+    ->daily()
+    ->timezone('Europe/Moscow')
+    ->at('11:00')
+    ->appendOutputTo(storage_path('logs/firebase/product_notifications.log'));
     

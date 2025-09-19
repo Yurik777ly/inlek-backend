@@ -42,7 +42,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/daily',            [ProductController::class,  'getDaily']);
         Route::get('/{id}',             [ProductController::class,  'getById']);
         Route::get('/{id}/pharmacies',  [ProductController::class,  'getPharmaciesByProductId']);
-
+        Route::post('/{id}/notification',[ProductController::class, 'addProductNotification']);  
     });
 
     Route::prefix('cart')->group(function () {

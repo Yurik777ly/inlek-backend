@@ -2,16 +2,13 @@
 
 namespace App\Models;
 
-use Carbon\Carbon;
-use App\Http\Dto\Auth\AuthDTO;
-use App\Http\Dto\Profile\ProfileDTO;
+use App\Models\EVO\EvoSiteContent;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
-use Illuminate\Support\Facades\Hash;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use App\Models\Cart;
 
@@ -80,5 +77,14 @@ class User extends Authenticatable
     public function cart(): HasOne
     {
         return $this->hasOne(Cart::class, 'user_id');
+    }
+
+    public function notificateProducts()
+    {
+        return $this->belongsToMany(
+            EvoSiteContent::class,
+            'notificate_product_user',
+            'user_id',
+            'product_id');
     }
 }
