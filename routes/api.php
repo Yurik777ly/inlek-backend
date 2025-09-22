@@ -1,12 +1,13 @@
 <?php
 
 use App\Http\Controllers\API\AuthController;
-use App\Http\Controllers\API\OrderController;
-use App\Http\Controllers\API\ProfileController;
-use App\Http\Controllers\API\ContentController;
 use App\Http\Controllers\API\CartController;
 use App\Http\Controllers\API\CategoryController;
+use App\Http\Controllers\API\ContentController;
+use App\Http\Controllers\API\OrderController;
 use App\Http\Controllers\API\ProductController;
+use App\Http\Controllers\API\ProfileController;
+use App\Http\Controllers\API\V2\SearchController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('auth')->group(function () {
@@ -80,8 +81,6 @@ Route::middleware('auth:sanctum')->group(function () {
 
 });
 
-
-
 Route::prefix('categories')->group(function () {
     Route::get('/',                     [CategoryController::class, 'getList']);                    //!!!
     Route::get('/{id}',                 [CategoryController::class, 'getList']);                   //!!!
@@ -90,6 +89,7 @@ Route::prefix('categories')->group(function () {
     Route::get('/{id}/countries',       [CategoryController::class, 'getCountries']);                    //!!!
 });
 
+Route::get('/v2/search', [SearchController::class, 'search']);
 /*
 Route::prefix('search')->group(function () {
     Route::post('/',                [SearchController::class,   'doSearch']);                         //!!!
