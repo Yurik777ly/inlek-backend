@@ -37,8 +37,7 @@ class RememberFailedRegistationCommand extends FirebaseCommand
                       ->orWhereNull('last_sms_requested_at');
             })
             ->where('sms_requested_qty', '<', $limit)
-            // ->get(['fcm_token','phone']);
-            ->get(['phone']);
+             ->get(['fcm_token','phone']);
 
         $sentCount = 0;
 
