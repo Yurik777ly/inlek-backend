@@ -13,11 +13,11 @@ class SearchController extends Controller
 {
     public function search(Request $request): JsonResponse
     {
-        $query = $request->input('search_query');
+        $query = $request->input('query');
 
         if (!$query) {
             return response()->json([
-                'error' => 'Параметр search_query обязателен.'
+                'error' => 'Параметр query обязателен.'
             ], 400);
         }
 
@@ -48,7 +48,7 @@ class SearchController extends Controller
         $extraData = ProductInfoViewJsonFilter::query()
             ->whereIn('product_id', $productIds)
             ->select([
-                'evo_product_info_view_json.product_id',
+                'product_id',
                 'product_charachters',
                 'action_json',
                 'promocodes_json',
