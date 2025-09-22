@@ -7,6 +7,7 @@ use App\Http\Controllers\API\ContentController;
 use App\Http\Controllers\API\CartController;
 use App\Http\Controllers\API\CategoryController;
 use App\Http\Controllers\API\ProductController;
+use App\Http\Controllers\API\Push\NotificationController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('auth')->group(function () {
@@ -41,7 +42,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/daily',            [ProductController::class,  'getDaily']);
         Route::get('/{id}',             [ProductController::class,  'getById']);
         Route::get('/{id}/pharmacies',  [ProductController::class,  'getPharmaciesByProductId']);
-
+        Route::post('/{id}/notification',[ProductController::class, 'addProductNotification']);  
     });
 
     Route::prefix('cart')->group(function () {
@@ -108,3 +109,8 @@ Route::get('/banners',              [ContentController::class,  'getBanners']);
 Route::get('/pharmacies',           [ContentController::class,  'getPharmacies']);
 Route::get('/cities',               [ContentController::class,  'getCities']);
 Route::get('/info',                 [ContentController::class,  'getCustomerInfo']);
+
+Route::prefix('notifications')->group(function () {
+    Route::post('/send', [NotificationController::class, 'sendNotification']);
+    Route::get('/token', [NotificationController::class, 'getAccessToken']);
+});
