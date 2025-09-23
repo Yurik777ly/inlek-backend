@@ -57,11 +57,11 @@ class OrderController extends Controller
             ], 400);
         }
 
-        if (is_array($data) && isset($data['created_at'])) {
-            $data['created_at'] = $this->formatDateTimeISO($data['created_at']);
+        if (is_array($data) && isset($data['order']->created_at)) {
+            $data['order']->created_at = $this->formatDateTimeISO($data['order']->created_at);
         }
-        if (is_array($data) && isset($data['updated_at'])) {
-            $data['updated_at'] = $this->formatDateTimeISO($data['updated_at']);
+        if (is_array($data) && isset($data['order']->updated_at)) {
+            $data['order']->updated_at = $this->formatDateTimeISO($data['order']->updated_at);
         }
 
         return response()->json([
