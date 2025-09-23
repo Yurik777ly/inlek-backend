@@ -87,7 +87,6 @@ class OrderService
 
     public function create($orderArray)
     {
-//        try {
             return DB::transaction(function () use ($orderArray) {
                 // Обновляем информацию о пользователе
                 $this->updateUserInfo($orderArray);
@@ -122,10 +121,6 @@ class OrderService
                 // Возвращаем ответ
                 return $this->formatOrderResponse($orderId, $orderArray, $orderCalculations, $processor, $cartData['orderProducts']);
             });
-//        } catch (\Exception $e) {
-//            Log::error('Order creation failed', ['error' => $e->getMessage(), 'order_data' => $orderArray]);
-//            return false;
-//        }
     }
 
     private function updateUserInfo(array $orderArray): void
@@ -169,8 +164,8 @@ class OrderService
 
         $position = 1;
         
-        $sum = $products['cart']['totals']['total_final_price'];
-        $oldsum = $products['cart']['totals']['total_price_old'];
+        $sum = 0;
+        $oldsum = 0;
         $orderProducts = [];
 
         foreach ($products['cart']['products'] as $product) {
@@ -178,6 +173,8 @@ class OrderService
                 $price = (float)$product['prices']['final_price'];
                 $price_old = (float)$product['prices']['price_old'] ?? 0;
                 $quantity = $product['quantity'];
+                $sum = $sum + $price * $quantity;
+                $oldsum = $oldsum + $price_old * $quantity;
 
                 $fullProductInfo = $productsFullInfo->get($product['product_id']);
                 $productCharachters = null;
@@ -695,7 +692,7 @@ class OrderService
                     'product_id' => $product->product_id,
                     'pharmacy_id' => $options['pharmacy_id'] ?? null,
                     'product_title' => $product->title,
-                    'price' => $product->price,
+                    'price' => (float) round($product->price, 2),
                     'position' => $product->position,
                     'count' => $product->count,
                     'options' => $options
