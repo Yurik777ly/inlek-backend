@@ -49,11 +49,6 @@ class OrderController extends Controller
         $data = $this->OrderService->create($validator->validated());
 
         return $this->responseOk($data);
-
-        return response()->json([
-            'data' => $data,
-            'status' => 'success',
-        ], 200);
     }
 
     /**

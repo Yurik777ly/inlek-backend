@@ -43,6 +43,7 @@ const SELF_GET_TITLES = [
 
 class OrderService
 {
+    const DEFAULT_PHARMACY = 6864;
 
     public function __construct(
         protected readonly User $User,
@@ -90,9 +91,8 @@ class OrderService
         $payment_method = $orderArray['payment'];
         $payment_method_title = ($orderArray['delivery'] == 'cash') ? "При получении" : $payment_method;
 
-        $orderArray['pharmacy_id'] = ($orderArray['pharmacy_id'] == 0) ? 6864 : $orderArray['pharmacy_id'];
+        $orderArray['pharmacy_id'] = ($orderArray['pharmacy_id'] == 0) ? self::DEFAULT_PHARMACY : $orderArray['pharmacy_id'];
 
-        //$products = $this->CartService->getCart();
 
 
         $cartDTO = new CartDetailedDTO(
@@ -103,31 +103,30 @@ class OrderService
 
         $this->CartService->setUserGeo('', '');
 
-        $products = $this->CartService->getCartDetailed($cartDTO);
+        
+        $orderInfo = $this->CartService->getCartDetailed($cartDTO);
 
         if(empty($products)) return false;
 
 
         $position = 1;
-        $cartProducts = [];
                                        
-        $sum = 0;
-        $oldsum = 0;
+        $sum = $orderInfo['cart']['totals']['total_final_price'];
+        $oldsum = $orderInfo['cart']['totals']['total_price_old'];
+        $deliverySum = $orderInfo['cart']['totals']['delivery_sum'];
+        $discount = $orderInfo['cart']['totals']['total_discount'];
 
 
-        $orderProducts = [];       
-        foreach ($products['cart']['products'] as $product) {
-            $cartProduct = $product['product_info'];
+        $orderProducts = [];     
+        foreach ($orderInfo['cart']['products'] as $product) {
             if (in_array($product['product_id'], $orderArray['ids'])) {
+                $price =     (float)$product['prices']['final_price'];
+                $price_old = (float)$product['prices']['price_old'] ?? 0;
 
-                $price =     (float)$product['product_totals']['total'];
-                $price_old = (float)$product['product_totals']['total_old'] ?? 0;
-                $sum += $price * $product['quantity'];
-                $oldsum+= ($price_old > 0) ? $price_old*$product['quantity'] : $price*$product['quantity'];
 
                 $orderProducts[$position-1] = [
                     'product_id' => $product['product_id'],
-                    'title' => $cartProduct['pagetitle'],
+                    'title' => $product['product_info']['pagetitle'],
                     'price' => $price,
                     'count' => $product['quantity'],
                     'options' => "{\"pharmacy_id\":{$orderArray['pharmacy_id']},\"iscancellations\":false,\"number_1c\":0,\"price\":{$price},\"price_old\":{$price_old}}",
@@ -138,7 +137,7 @@ class OrderService
             }
         }
 
-        $deliverySum = 0;
+        
         if ($delivery_method == 'delivery' && !empty($orderArray['delivery_zone'])) {
             if ($orderArray['delivery_zone'] == 'yellow') {
                 $deliverySum = 8;
@@ -173,9 +172,9 @@ class OrderService
                 "sum" => [
                     "pricesSum" => $sum,    //стоимость товаров со скидкой
                     "oldPricesSum" => $oldsum, //стоимость товаров без скидки
-                    "oldPricesSaleSum" => ($oldsum > 0) ? round((1 - $sum/$oldsum)*100,2) : 0, //скидка
+                    "oldPricesSaleSum" => $discount ?? 0, //скидка
                     "deliverySum" => $deliverySum, //доставка
-                    "totalSum" => $oldsum + $deliverySum // итого
+                    "totalSum" => $sum + $deliverySum // итого
                 ],
                 "delivery_method" => $delivery_method,
                 "delivery_method_title" => $delivery_method_title,
@@ -216,7 +215,7 @@ class OrderService
 
 
         $this->EvoCommerceOrderPayments->order_id = $order_id;
-        $this->EvoCommerceOrderPayments->amount = $oldsum + $deliverySum;
+        $this->EvoCommerceOrderPayments->amount = $sum + $deliverySum;
         $this->EvoCommerceOrderPayments->hash = $this->generateUniqueHash();
         $this->EvoCommerceOrderPayments->payment_method = $payment_method;
         $this->EvoCommerceOrderPayments->meta = '{}';
@@ -269,12 +268,6 @@ class OrderService
         }
 
         return $data;
-
-
-/*
-    "city":"Минск",
-    "address": "Хрущева"
-*/
     }
 
     public function getDetailed(string $userId, int $orderId)
