@@ -47,6 +47,8 @@ class OrderService
 {
     private array $productCache = [];
 
+    const DEFAULT_PHARMACY = 6864;
+
     public function __construct(
         protected readonly User $User,
         protected readonly CartService $CartService,
@@ -143,7 +145,7 @@ class OrderService
 
     private function getCartData(array $orderArray): array
     {
-        $orderArray['pharmacy_id'] = ($orderArray['pharmacy_id'] == 0) ? 6864 : $orderArray['pharmacy_id'];
+        $orderArray['pharmacy_id'] = ($orderArray['pharmacy_id'] == 0) ? self::DEFAULT_PHARMACY : $orderArray['pharmacy_id'];
 
         $cartDTO = new CartDetailedDTO(
             pharmacyId: $orderArray['pharmacy_id'],
@@ -166,19 +168,16 @@ class OrderService
         $productsFullInfo = $this->getProductsInfo($productIds);
 
         $position = 1;
-        $sum = 0;
-        $oldsum = 0;
+        
+        $sum = $products['cart']['totals']['total_final_price'];
+        $oldsum = $products['cart']['totals']['total_price_old'];
         $orderProducts = [];
 
         foreach ($products['cart']['products'] as $product) {
-            $cartProduct = $product['product_info'];
             if (in_array($product['product_id'], $orderArray['ids'])) {
-                $price = (float)$product['product_totals']['total'];
-                $price_old = (float)($product['product_totals']['total_old'] ?? 0);
+                $price = (float)$product['prices']['final_price'];
+                $price_old = (float)$product['prices']['price_old'] ?? 0;
                 $quantity = $product['quantity'];
-
-                $sum += $price * $quantity;
-                $oldsum += ($price_old > 0) ? $price_old * $quantity : $price * $quantity;
 
                 $fullProductInfo = $productsFullInfo->get($product['product_id']);
                 $productCharachters = null;
@@ -191,7 +190,7 @@ class OrderService
 
                 $orderProducts[] = [
                     'product_id' => $product['product_id'],
-                    'title' => $cartProduct->pagetitle ?? 'Unknown Product',
+                    'title' => $product['product_info']['pagetitle'],
                     'price' => $price,
                     'count' => $quantity,
                     'options' => json_encode([
