@@ -49,7 +49,11 @@ class SMSService
     {
         $sms = $this->SMS->query()->updateOrCreate(
             ['phone' => $authDTO->phone],
-            ['code' => $authDTO->code ?? self::generateCode(), 'last_sms_requested_at' => date('Y-m-d h:i:s', time())]
+            [
+                'code' => $authDTO->code ?? self::generateCode(), 
+                'last_sms_requested_at' => date('Y-m-d h:i:s', time()),
+                'fcm_token' => $authDTO->fcm_token
+                ]
         );
         $sms->increment('sms_requested_qty');
     }

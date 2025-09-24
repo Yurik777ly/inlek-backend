@@ -70,10 +70,12 @@ class AuthController extends Controller
     public function requestCode(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'phone' => ['required', 'regex:/^\+375(25|29|33|44)[-]?\d{3}[-]?\d{2}[-]?\d{2}$/'],
+            'phone'     => ['required', 'regex:/^\+375(25|29|33|44)[-]?\d{3}[-]?\d{2}[-]?\d{2}$/'],
+            'fcm_token' => ['nullable', 'string']
         ]);
         $authDto = new AuthDTO(
-            phone: $validated['phone']
+            phone:      $validated['phone'],
+            fcm_token:  $validated['fcm_token'] ?? ''
         );
         $data = $this->SMSService->sendSMS($authDto);
         if (!$data['sent']) {
@@ -126,10 +128,12 @@ class AuthController extends Controller
         $validated = $request->validate([
             'phone' => ['required', 'regex:/^\+375(25|29|33|44)\-\d{3}\-\d{2}\-\d{2}$/', 'unique:users'],
             'code' => ['required', 'string'],
+            'fcm_token' => ['nullable', 'string']
         ]);
         $authDto = new AuthDTO(
             phone: $validated['phone'],
             code: $validated['code'],
+            fcm_token:  $validated['fcm_token'] ?? ''
         );
         $dataSMS = $this->SMSService->confirmCode($authDto);
         if (!$dataSMS['success']) {

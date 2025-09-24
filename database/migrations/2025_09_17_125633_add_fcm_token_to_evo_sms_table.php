@@ -11,10 +11,8 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::table('users', function (Blueprint $table) {
-            $table->string('checkboxes')->nullable();
-            $table->json('delivery')->nullable();
-            $table->integer('pharmacy')->nullable();
+        Schema::table('evo_sms', function (Blueprint $table) {
+            $table->string('fcm_token')->nullable();
         });
     }
 
@@ -23,8 +21,8 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::table('users', function (Blueprint $table) {
-            $table->dropSoftDeletes();
+        Schema::table('evo_sms', function (Blueprint $table) {
+            $table->dropColumn('fcm_token');
         });
     }
 };
