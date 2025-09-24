@@ -95,6 +95,9 @@ class OrderController extends Controller
             if (isset($orderArray['updated_at'])) {
                 $orderArray['updated_at'] = $this->formatDateTimeISO($orderArray['updated_at']);
             }
+            if (isset($orderArray['amount']) ) {
+                $orderArray['amount'] = round($orderArray['amount'],2);
+            }
 
             $response = [
                 'order' => $orderArray,
