@@ -43,17 +43,19 @@ class RememberFailedRegistationCommand extends FirebaseCommand
 
         if ($incompletedRegistration->count() > 0) {
             foreach($incompletedRegistration as $unconfirmedUser) {
-                $result = $this->firebaseService->sendToDevice(
+                if ($unconfirmedUser->fcm_token) {
+                    $result = $this->firebaseService->sendToDevice(
                     $unconfirmedUser->fcm_token,
                         [
                             'title' => self::TITLE_MSG,
                             'body'  => self::BODY_MSG,
                         ]
-                );
-                if ($result['success']) {
-                    $sentCount++;
-                } else {
-                   $this->info('Error for number '. $unconfirmedUser->phone .' ' . $result['error']); 
+                    );
+                    if ($result['success']) {
+                        $sentCount++;
+                    } else {
+                        $this->info('Error for number '. $unconfirmedUser->phone .' ' . $result['error']); 
+                    }
                 }
             }
         }
