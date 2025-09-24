@@ -3,6 +3,7 @@
 namespace App\Services\Payment;
 
 use Exception;
+use Illuminate\Support\Facades\Log;
 
 class Oplati extends Payment
 {
@@ -27,7 +28,7 @@ class Oplati extends Payment
     {
         $amountMinor = (int) round($payment->amount * 100);
 
-        $payload = [
+        $payloadV2 = [
             'shift'        => '1',
             'sum'          => $amountMinor,
             'orderNumber'  => (string)($order->id . '-' . $payment->id),
@@ -49,13 +50,43 @@ class Oplati extends Payment
             'failureUrl'      => rtrim(config('app.url'), '/') . '/api/payments/payment-failed?token=' . $payment->hash,
             'notificationUrl' => rtrim(config('app.url'), '/') . '/api/payments/payment-process?token=' . $payment->hash,
         ];
+        $payloadV2['signature'] = $this->makeSignature($payloadV2);
 
-        // Подпись
-        $payload['signature'] = $this->makeSignature($payload);
+        $response = $this->request('/pos/webPayments/v2', $payloadV2);
 
-        $response = $this->request('/pos/webPayments/v2', $payload);
+        $hasUsableLink = is_array($response) && (!empty($response['paymentUrl']) || !empty($response['redirectUrl']) || !empty($response['order']['id']) || !empty($response['paymentId']));
+
+        if (!$hasUsableLink) {
+            $amountMajor = (float) round($payment->amount, 2);
+            $payloadV1 = [
+                'shift'        => '1',
+                'sum'          => $amountMajor,
+                'orderNumber'  => (string)($order->id . '-' . $payment->id),
+                'details'      => [
+                    'title'       => 'Оплата заказа #' . $order->id,
+                    'amountTotal' => $amountMajor,
+                    'items'       => [
+                        [
+                            'type'     => 1,
+                            'name'     => 'Заказ #' . $order->id,
+                            'quantity' => 1,
+                            'unit'     => 'шт',
+                            'price'    => $amountMajor,
+                            'cost'     => $amountMajor,
+                        ],
+                    ],
+                ],
+                'successUrl'      => rtrim(config('app.url'), '/') . '/api/payments/payment-success?token=' . $payment->hash,
+                'failureUrl'      => rtrim(config('app.url'), '/') . '/api/payments/payment-failed?token=' . $payment->hash,
+                'notificationUrl' => rtrim(config('app.url'), '/') . '/api/payments/payment-process?token=' . $payment->hash,
+            ];
+            $payloadV1['signature'] = $this->makeSignature($payloadV1);
+
+            $response = $this->request('/pos/webPayments', $payloadV1);
+        }
 
         if (!$response) {
+            error_log('Oplati: empty or invalid response when creating payment link');
             return false;
         }
 
@@ -63,14 +94,28 @@ class Oplati extends Payment
         $payment->meta = json_encode($meta, JSON_UNESCAPED_UNICODE);
         $payment->save();
 
+        // Варианты получения ссылки
         if (!empty($response['paymentUrl'])) {
             return $response['paymentUrl'];
+        }
+
+        if (!empty($response['redirectUrl'])) {
+            return $response['redirectUrl'];
         }
 
         if (!empty($response['order']['id'])) {
             return $this->settings['pay_base'] . '/' . $response['order']['id'];
         }
 
+        if (!empty($response['paymentId'])) {
+            return rtrim($this->settings['pay_base'], '/') . '/' . $response['paymentId'];
+        }
+
+        if (!empty($response['dynamicQR'])) {
+            return false;
+        }
+
+        error_log('Oplati: payment link not found in response: ' . json_encode($response, JSON_UNESCAPED_UNICODE));
         return false;
     }
 
@@ -172,7 +217,7 @@ class Oplati extends Payment
             error_log("Oplati invalid response: " . $response);
             return false;
         }
-
+        Log::info("Oplati request received " . $response);
         return $decoded;
     }
 
