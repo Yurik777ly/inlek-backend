@@ -26,7 +26,7 @@ class OrderController extends Controller
             'last_name' => 'required|string|max:255',
             'first_name' => 'required|string|max:255',
             'phone' => 'required|string|max:20',
-            'email' => 'required_if:delivery,delivery|nullable|email|max:255',
+            'email' => 'required_if:payment,bepaid,oplati,erip|nullable|email|max:255',
             'city' => 'required_if:delivery,delivery|nullable|max:255',
             'address' => 'required_if:delivery,delivery|nullable|max:255',
             'entrance' => 'nullable|string|max:10',
@@ -46,6 +46,7 @@ class OrderController extends Controller
                 'errors' => $validator->errors()
             ], 422);
         }
+    
 
         // Создание заказа
         $data = $this->OrderService->create($validator->validated());
