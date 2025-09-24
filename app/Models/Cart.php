@@ -15,9 +15,4 @@ class Cart extends Model
     {
         return $this->belongsToMany(EvoSiteContent::class)->withPivot('quantity');
     }
-
-     public function user()
-    {
-        return $this->belongsTo(related: User::class);
-    }
 }

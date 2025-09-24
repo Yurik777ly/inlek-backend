@@ -5,7 +5,6 @@ namespace App\Http\Controllers\API;
 use App\Http\Controllers\Controller;
 use App\Http\Dto\Product\ProductDTO;
 use App\Http\Dto\Profile\ProfileDTO;
-use App\Models\EVO\EvoSiteContent;
 use App\Models\SMS;
 use App\Services\User\AuthService;
 use App\Services\User\ProfileService;
@@ -187,17 +186,5 @@ class ProductController extends Controller
         $this->ProfileService->deleteProfile($request->user());
         return $this->responseOk();
     }
-
-    public function addProductNotification(Request $request): JsonResponse
-    {
-        $validated = $request->validate([
-           'id' => 'required|exists:evo_site_content,id'
-        ]);
-
-        $user = auth()->user();
-        $user->notificateProducts()->attach($validated['id']);
-       
-        return $this->responseOk();
-    } 
 
 }

@@ -9,9 +9,8 @@
         "curl/curl": "^2.5",
         "darkaonline/l5-swagger": "^8.5",
         "google/auth": "^1.47",
-        "kreait/firebase-php": "^7.21",
-        "laravel/framework": "^11.9",
-        "laravel/sanctum": "^4.0",
+        "laravel/framework": "^10.0",
+        "laravel/sanctum": "^3.3",
         "laravel/tinker": "^2.9",
         "reliese/laravel": "^1.3",
         "zircote/swagger-php": "^4.11"

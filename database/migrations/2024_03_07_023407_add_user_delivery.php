@@ -14,7 +14,7 @@ return new class extends Migration
         Schema::table('users', function (Blueprint $table) {
             $table->string('checkboxes')->nullable();
             $table->json('delivery')->nullable();
-            $table->integer('pharmacy')->nullable();
+            $table->int('pharmacy')->nullable();
         });
     }
 

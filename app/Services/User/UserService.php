@@ -43,7 +43,6 @@ class UserService
             $this->User->accept_policy = true;
             $this->User->status_notifications = true;
             $this->User->name = 'Пользователь';
-            $this->User->fcm_token = $authDTO->fcm_token;
             $this->User->save();
         }
 
