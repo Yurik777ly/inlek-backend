@@ -94,7 +94,6 @@ class Oplati extends Payment
         $payment->meta = json_encode($meta, JSON_UNESCAPED_UNICODE);
         $payment->save();
 
-        // Варианты получения ссылки
         if (!empty($response['paymentUrl'])) {
             return $response['paymentUrl'];
         }
@@ -124,7 +123,6 @@ class Oplati extends Payment
      */
     public function handleCallback($paymentHash)
     {
-        // Проверка Basic Auth
         if (
             !isset($_SERVER['PHP_AUTH_USER']) ||
             !isset($_SERVER['PHP_AUTH_PW']) ||
@@ -186,7 +184,7 @@ class Oplati extends Payment
     /**
      * Отправка curl-запроса
      */
-    protected function request($uri, $data)
+    protected function request($uri, $data): bool|array
     {
         $url = rtrim($this->settings['base_url'], '/') . $uri;
 
@@ -224,7 +222,7 @@ class Oplati extends Payment
     /**
      * Подпись запроса
      */
-    protected function makeSignature(array $payload)
+    protected function makeSignature(array $payload): string
     {
         $json = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
         return hash_hmac('sha256', $json, $this->settings['secret_key']);
@@ -233,7 +231,7 @@ class Oplati extends Payment
     /**
      * Проверка подписи ответа
      */
-    protected function verifySignature(array $response)
+    protected function verifySignature(array $response): bool
     {
         if (empty($response['signature'])) {
             return false;

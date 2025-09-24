@@ -77,6 +77,28 @@ class OrderService
             if ($payment) {
                 $payment->paid = 1;
                 $payment->save();
+
+                $order = $this->EvoCommerceOrders->query()->where('id', $payment->order_id)->first();
+                if ($order) {
+                    $fields = json_decode($order->fields ?? '{}', true);
+                    $paymentMethod = $fields['payment']['id'] ?? $fields['payment_method'] ?? null;
+
+                    if (in_array($paymentMethod, ['oplati', 'bepaid', 'erip'], true)) {
+                        $orderProducts = $this->EvoCommerceOrderProducts->query()
+                            ->where('order_id', $order->id)
+                            ->get(['product_id']);
+
+                        $productIds = $orderProducts->pluck('product_id')->unique()->values()->all();
+
+                        if (!empty($productIds) && !empty($order->customer_id)) {
+                            $user = User::query()->find($order->customer_id);
+                            if ($user && method_exists($user, 'cart') && $user->cart) {
+                                $user->cart->products()->detach($productIds);
+                            }
+                        }
+                    }
+                }
+
                 return true;
             }
         } catch (\Exception $e) {
@@ -106,8 +128,10 @@ class OrderService
                 // Сохраняем товары заказа
                 $this->saveOrderProducts($orderId, $cartData['orderProducts'], $orderArray['pharmacy_id']);
 
-                // Очищаем корзину
-                $this->clearCartProducts(array_column($cartData['orderProducts'], 'product_id'));
+                // Очищаем корзину только для офлайн-оплаты (cash). Для онлайн-оплат очистим после подтверждения платежа.
+                if (($orderArray['payment'] ?? '') === 'cash') {
+                    $this->clearCartProducts(array_column($cartData['orderProducts'], 'product_id'));
+                }
 
                 // Создаем запись в истории
                 $this->createOrderHistory($orderId);
@@ -163,7 +187,7 @@ class OrderService
         $productsFullInfo = $this->getProductsInfo($productIds);
 
         $position = 1;
-        
+
         $sum = 0;
         $oldsum = 0;
         $orderProducts = [];
