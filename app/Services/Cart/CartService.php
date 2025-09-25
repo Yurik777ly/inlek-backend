@@ -173,27 +173,6 @@ class CartService
             $products
         );
 
-        $pharmDto = new CartPharmaciesDTO(
-            geoLat: 53.9,
-            geoLong: 27.5667,
-            products: $itemsDto,
-        );
-
-        $pharmacies = $this->getProductByPharmacies($pharmDto);
-
-        $selected = collect($pharmacies)
-            ->firstWhere('pharmacy_id', $cartDTO->pharmacyId);
-
-        if ($selected) {
-            $data['pharmacy_name'] = $selected['pharmacy_name'];
-            $data['pharmacy_address'] = $selected['address'];
-            $data['pharmacy_availability'] = $selected['availability'];
-        } else {
-            $data['pharmacy_name'] = null;
-            $data['pharmacy_address'] = null;
-            $data['pharmacy_availability'] = 'absent';
-        }
-
         return $data;
     }
 
