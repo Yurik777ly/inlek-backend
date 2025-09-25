@@ -109,6 +109,9 @@ class OrderService
 
     public function create($orderArray)
     {
+
+            $orderArray['pharmacy_id'] = ($orderArray['pharmacy_id'] == 0) ? self::DEFAULT_PHARMACY : $orderArray['pharmacy_id'];
+
             return DB::transaction(function () use ($orderArray) {
                 // Обновляем информацию о пользователе
                 $this->updateUserInfo($orderArray);
@@ -164,7 +167,6 @@ class OrderService
 
     private function getCartData(array $orderArray): array
     {
-        $orderArray['pharmacy_id'] = ($orderArray['pharmacy_id'] == 0) ? self::DEFAULT_PHARMACY : $orderArray['pharmacy_id'];
 
         $cartDTO = new CartDetailedDTO(
             pharmacyId: $orderArray['pharmacy_id'],
@@ -193,7 +195,7 @@ class OrderService
         $orderProducts = [];
 
         foreach ($products['cart']['products'] as $product) {
-            if (in_array($product['product_id'], $orderArray['ids'])) {
+            if (in_array($product['product_id'], $orderArray['ids']) && $product['quantity'] > 0 ) {
                 $price = (float)$product['prices']['final_price'];
                 $price_old = (float)$product['prices']['price_old'] ?? 0;
                 $quantity = $product['quantity'];
