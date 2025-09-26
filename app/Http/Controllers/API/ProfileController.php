@@ -9,6 +9,7 @@ use App\Services\User\AuthService;
 use App\Services\User\ProfileService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use App\Http\Requests\User\UpdateRequest;
 use Illuminate\Validation\ValidationException;
 
 class ProfileController extends Controller
@@ -34,26 +35,14 @@ class ProfileController extends Controller
     }
 
     /**
-     * @param Request $request
+     * @param UpdateRequest $request
      * @return JsonResponse
      * @throws ValidationException
      */
-    public function updateProfile(Request $request): JsonResponse
+    public function updateProfile(UpdateRequest $request): JsonResponse
     {
-        $validated = $request->validate([
-            'phone' => ['string', 'regex:/^\+375(25|29|33|44)\-\d{3}\-\d{2}\-\d{2}$/'],
-            'first_name' => 'nullable|string',
-            'last_name' => 'nullable|string',
-            'gender' => 'nullable|string',
-            'birthday' => 'nullable|string',
-            'email' => 'nullable|string',
-            'old_password' => 'nullable|string',
-            'new_password' => 'nullable|string',
-            'new_password_confirm' => 'nullable|string',
-            'status_notifications' => 'nullable|string',
-            'accept_policy' => 'string',
-            'code' => 'nullable|string',
-        ]);
+        $validated = $request->validated();
+        
         $profileDto = new ProfileDTO(
             userId: $request->user()->id,
             phone: $validated['phone'] ?? "",
@@ -69,13 +58,9 @@ class ProfileController extends Controller
             acceptPolicy: $validated['accept_policy'] ?? false,
             code: $validated['code'] ?? null
         );
-        $dataUser = $this->AuthService->getUser($profileDto);
-        if ($dataUser && $request->user()->phone !== $dataUser->phone) {
-            throw ValidationException::withMessages([
-                'phone' => 'номер телефона занят',
-            ]);
-        }
+     
         $data = $this->ProfileService->updateProfile($profileDto);
+
         if ($data['success']) {
             $profile = $this->ProfileService->getUserProfile($profileDto);
             return $this->responseOk($profile->toArray());

@@ -60,7 +60,7 @@ class CartController extends Controller
     public function addToCart(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'product_id' => ['required', 'integer'],
+            'product_id' => ['required', 'integer', 'exists:evo_site_content,id'],
             'quantity' => ['required', 'integer'],
         ]);
 

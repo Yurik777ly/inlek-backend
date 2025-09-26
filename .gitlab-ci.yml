@@ -6,12 +6,11 @@ variables:
 
 deploy:
   stage: deploy
-  image: alpine:latest
+  image: ubuntu:22.04
   before_script:
-    - apk add --no-cache openssh sshpass
+    - apt-get update
+    - apt-get install -y openssh-client sshpass
     - mkdir -p ~/.ssh
-   # - echo "$DEV_SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
-   # - chmod 600 ~/.ssh/id_rsa
     - echo -e "Host *\n\tStrictHostKeyChecking no\n" > ~/.ssh/config
   script:
     - ls -la ./

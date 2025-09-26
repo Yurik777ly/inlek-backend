@@ -2,6 +2,12 @@
 
 namespace App\Console;
 
+use App\Console\Commands\Firebase\CheckForgottenCartCommand;
+use App\Console\Commands\Firebase\CheckUpdatedOrderStatusCommand;
+use App\Console\Commands\Firebase\NotifyUserProductCommand;
+use App\Console\Commands\Firebase\RememberFailedRegistationCommand;
+use App\Console\Commands\Firebase\SendNewsCommand;
+use App\Console\Commands\Firebase\SendPromotionsCommand;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Console\Kernel as ConsoleKernel;
 
@@ -12,7 +18,12 @@ class Kernel extends ConsoleKernel
      */
     protected function schedule(Schedule $schedule): void
     {
-        // $schedule->command('inspire')->hourly();
+         $schedule->command(CheckForgottenCartCommand::class)->weekly();
+         $schedule->command(SendNewsCommand::class)->daily();
+         $schedule->command(SendPromotionsCommand::class)->daily();
+         $schedule->command(RememberFailedRegistationCommand::class)->daily();
+         $schedule->command(NotifyUserProductCommand::class)->hourly();
+         $schedule->command(CheckUpdatedOrderStatusCommand::class)->everyThreeMinutes();
     }
 
     /**

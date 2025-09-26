@@ -86,6 +86,7 @@ class AuthService
                 'phone' => ['телефон не найден'],
             ]);
         }
+
         if (!Hash::check($authDTO->password, $user->password)) {
             throw ValidationException::withMessages([
                 'password' => ['пароль введен неверно'],
@@ -104,24 +105,26 @@ class AuthService
             }
         }
 
-        if (!empty($user->fcm_token)) {
-            try {
-                FireBase::send(
-                    'Авторизация',
-                    'Совершен вход в личный кабинет',
-                    [$user->fcm_token],
-                    []
-                );
-            } catch (\Exception $e) {
-                \Log::warning('Failed to send Firebase notification during login', [
-                    'phone' => $authDTO->phone,
-                    'fcm_token' => $user->fcm_token,
-                    'error' => $e->getMessage()
-                ]);
-            }
-        }
 
+        //ToDo уточнить, нужна ли отправка уведомления при регистрации 
+        // if (!empty($user->fcm_token)) {
+        //     try {
+        //         FireBase::send(
+        //             'Авторизация',
+        //             'Совершен вход в личный кабинет',
+        //             [$user->fcm_token],
+        //             []
+        //         );
+        //     } catch (\Exception $e) {
+        //         // Логируем ошибку, но не прерываем авторизацию
+        //         \Log::warning('FCM notification failed: ' . $e->getMessage(), [
+        //             'user_id' => $user->id,
+        //             'fcm_token' => $user->fcm_token
+        //         ]);
+        //     }
+        // }
         $token = $user->createToken($user->phone);
+
         return [
             'access_token' => $token->plainTextToken,
         ];

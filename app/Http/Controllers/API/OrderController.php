@@ -26,7 +26,7 @@ class OrderController extends Controller
             'last_name' => 'required|string|max:255',
             'first_name' => 'required|string|max:255',
             'phone' => 'required|string|max:20',
-            'email' => 'required_if:delivery,delivery|nullable|email|max:255',
+            'email' => 'required_if:payment,bepaid,oplati,erip|nullable|email|max:255',
             'city' => 'required_if:delivery,delivery|nullable|max:255',
             'address' => 'required_if:delivery,delivery|nullable|max:255',
             'entrance' => 'nullable|string|max:10',
@@ -46,6 +46,7 @@ class OrderController extends Controller
                 'errors' => $validator->errors()
             ], 422);
         }
+    
 
         // Создание заказа
         $data = $this->OrderService->create($validator->validated());
@@ -57,11 +58,11 @@ class OrderController extends Controller
             ], 400);
         }
 
-        if (is_array($data) && isset($data['created_at'])) {
-            $data['created_at'] = $this->formatDateTimeISO($data['created_at']);
+        if (is_array($data) && isset($data['order']->created_at)) {
+            $data['order']->created_at = $this->formatDateTimeISO($data['order']->created_at);
         }
-        if (is_array($data) && isset($data['updated_at'])) {
-            $data['updated_at'] = $this->formatDateTimeISO($data['updated_at']);
+        if (is_array($data) && isset($data['order']->updated_at)) {
+            $data['order']->updated_at = $this->formatDateTimeISO($data['order']->updated_at);
         }
 
         return response()->json([
@@ -95,6 +96,8 @@ class OrderController extends Controller
                 $orderArray['updated_at'] = $this->formatDateTimeISO($orderArray['updated_at']);
             }
 
+            $orderArray = $this->OrderService->roundOrderFields($orderArray);
+           
             $response = [
                 'order' => $orderArray,
                 'products' => $orderData->order_products_json ?? [],

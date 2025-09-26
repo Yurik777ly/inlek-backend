@@ -6,6 +6,7 @@ use App\Models\User;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Cache;
 use App\Models\OrderView;
 use App\Models\OrderViewJson;
 use App\Models\EVO\EvoCommerceOrderStatuses;
@@ -47,6 +48,8 @@ class OrderService
 {
     private array $productCache = [];
 
+    const DEFAULT_PHARMACY = 6864;
+
     public function __construct(
         protected readonly User $User,
         protected readonly CartService $CartService,
@@ -75,6 +78,28 @@ class OrderService
             if ($payment) {
                 $payment->paid = 1;
                 $payment->save();
+
+                $order = $this->EvoCommerceOrders->query()->where('id', $payment->order_id)->first();
+                if ($order) {
+                    $fields = json_decode($order->fields ?? '{}', true);
+                    $paymentMethod = $fields['payment']['id'] ?? $fields['payment_method'] ?? null;
+
+                    if (in_array($paymentMethod, ['oplati', 'bepaid', 'erip'], true)) {
+                        $orderProducts = $this->EvoCommerceOrderProducts->query()
+                            ->where('order_id', $order->id)
+                            ->get(['product_id']);
+
+                        $productIds = $orderProducts->pluck('product_id')->unique()->values()->all();
+
+                        if (!empty($productIds) && !empty($order->customer_id)) {
+                            $user = User::query()->find($order->customer_id);
+                            if ($user && method_exists($user, 'cart') && $user->cart) {
+                                $user->cart->products()->detach($productIds);
+                            }
+                        }
+                    }
+                }
+
                 return true;
             }
         } catch (\Exception $e) {
@@ -85,7 +110,9 @@ class OrderService
 
     public function create($orderArray)
     {
-//        try {
+
+            $orderArray['pharmacy_id'] = ($orderArray['pharmacy_id'] == 0) ? self::DEFAULT_PHARMACY : $orderArray['pharmacy_id'];
+
             return DB::transaction(function () use ($orderArray) {
                 // Обновляем информацию о пользователе
                 $this->updateUserInfo($orderArray);
@@ -105,8 +132,10 @@ class OrderService
                 // Сохраняем товары заказа
                 $this->saveOrderProducts($orderId, $cartData['orderProducts'], $orderArray['pharmacy_id']);
 
-                // Очищаем корзину
-                $this->clearCartProducts(array_column($cartData['orderProducts'], 'product_id'));
+                // Очищаем корзину только для офлайн-оплаты (cash). Для онлайн-оплат очистим после подтверждения платежа.
+                if (($orderArray['payment'] ?? '') === 'cash') {
+                    $this->clearCartProducts(array_column($cartData['orderProducts'], 'product_id'));
+                }
 
                 // Создаем запись в истории
                 $this->createOrderHistory($orderId);
@@ -120,10 +149,6 @@ class OrderService
                 // Возвращаем ответ
                 return $this->formatOrderResponse($orderId, $orderArray, $orderCalculations, $processor, $cartData['orderProducts']);
             });
-//        } catch (\Exception $e) {
-//            Log::error('Order creation failed', ['error' => $e->getMessage(), 'order_data' => $orderArray]);
-//            return false;
-//        }
     }
 
     private function updateUserInfo(array $orderArray): void
@@ -143,7 +168,6 @@ class OrderService
 
     private function getCartData(array $orderArray): array
     {
-        $orderArray['pharmacy_id'] = ($orderArray['pharmacy_id'] == 0) ? 6864 : $orderArray['pharmacy_id'];
 
         $cartDTO = new CartDetailedDTO(
             pharmacyId: $orderArray['pharmacy_id'],
@@ -166,19 +190,18 @@ class OrderService
         $productsFullInfo = $this->getProductsInfo($productIds);
 
         $position = 1;
+
         $sum = 0;
         $oldsum = 0;
         $orderProducts = [];
 
         foreach ($products['cart']['products'] as $product) {
-            $cartProduct = $product['product_info'];
-            if (in_array($product['product_id'], $orderArray['ids'])) {
-                $price = (float)$product['product_totals']['total'];
-                $price_old = (float)($product['product_totals']['total_old'] ?? 0);
+            if (in_array($product['product_id'], $orderArray['ids']) && $product['quantity'] > 0 ) {
+                $price = (float)$product['prices']['final_price'];
+                $price_old = (float)$product['prices']['price_old'] ?? 0;
                 $quantity = $product['quantity'];
-
-                $sum += $price * $quantity;
-                $oldsum += ($price_old > 0) ? $price_old * $quantity : $price * $quantity;
+                $sum = $sum + $price * $quantity;
+                $oldsum = $oldsum + $price_old * $quantity;
 
                 $fullProductInfo = $productsFullInfo->get($product['product_id']);
                 $productCharachters = null;
@@ -191,7 +214,7 @@ class OrderService
 
                 $orderProducts[] = [
                     'product_id' => $product['product_id'],
-                    'title' => $cartProduct->pagetitle ?? 'Unknown Product',
+                    'title' => $product['product_info']['pagetitle'],
                     'price' => $price,
                     'count' => $quantity,
                     'options' => json_encode([
@@ -502,11 +525,11 @@ class OrderService
             'pharmacy_name' => $pharmacy->pagetitle ?? 'Unknown Pharmacy',
             'pharmacy_id' => $pharmacy->pharmacy_id ?? null,
             'address' => $pharmacy->address ?? null,
-            'prices_sum' => $calculations['sum'],
-            'old_prices_sum' => $calculations['oldsum'],
-            'old_prices_sale_sum' => $calculations['oldPricesSaleSum'],
+            'prices_sum' => round($calculations['sum'], 2),
+            'old_prices_sum' => round($calculations['oldsum'], 2),
+            'old_prices_sale_sum' => round($calculations['oldPricesSaleSum'],2),
             'delivery_sum' => $calculations['deliverySum'],
-            'total_sum' => $calculations['totalSum'],
+            'total_sum' => round($calculations['totalSum'], 2),
             'promocodes_discount' => $calculations['promocodesDiscount'],
             'promocodes' => $orderArray['promocodes'] ?? [],
             'comment' => $orderArray['comment'] ?? '',
@@ -696,7 +719,7 @@ class OrderService
                     'product_id' => $product->product_id,
                     'pharmacy_id' => $options['pharmacy_id'] ?? null,
                     'product_title' => $product->title,
-                    'price' => $product->price,
+                    'price' => (float) round($product->price, 2),
                     'position' => $product->position,
                     'count' => $product->count,
                     'options' => $options
@@ -756,15 +779,18 @@ class OrderService
             return collect();
         }
 
-        try {
-            return DB::table('evo_pharmacies_view')
-                ->whereIn('pharmacy_id', $pharmacyIds)
-                ->get()
-                ->keyBy('pharmacy_id');
-        } catch (\Exception $e) {
-            Log::warning('Не получили информацию: ', ['pharmacy_ids' => $pharmacyIds]);
-            return collect();
-        }
+        $key = 'pharmacies:' . md5(json_encode(array_values(array_unique($pharmacyIds))));
+        return Cache::remember($key, 1600, function() use ($pharmacyIds) {
+            try {
+                return DB::table('evo_pharmacies_view')
+                    ->whereIn('pharmacy_id', $pharmacyIds)
+                    ->get()
+                    ->keyBy('pharmacy_id');
+            } catch (\Exception $e) {
+                Log::warning('Не получили информацию: ', ['pharmacy_ids' => $pharmacyIds]);
+                return collect();
+            }
+        });
     }
 
     private function transformOrderWithEnrichedData($order, ?object $pharmacy, array $orderFields, array $enrichedProducts): object
@@ -885,9 +911,12 @@ class OrderService
             ->with(['status:id,title'])
             ->where('customer_id', $userId)
             ->when(!empty($number), fn($query) => $query->where('id', $number))
-            ->when((!empty($isActive) && $isActive == 1), fn($query) => $query->whereHas('status', function($q) {
-                $q->whereNotIn('title', INACTIVE_STATUSES);
-            }))
+            ->when((!empty($isActive) && $isActive == 1), function($query) {
+                $inactiveIds = $this->getInactiveStatusIds();
+                if (!empty($inactiveIds)) {
+                    $query->whereNotIn('status_id', $inactiveIds);
+                }
+            })
             ->orderBy('id', 'desc')
             ->get();
 
@@ -920,5 +949,37 @@ class OrderService
     public function getOrderStatuses(): Collection
     {
         return $this->EvoCommerceOrderStatuses->query()->get();
+    }
+
+    public function roundOrderFields(array $orderArray):array
+    {
+        if (isset($orderArray['amount']) ) {
+            $orderArray['amount'] = round($orderArray['amount'],2);
+        }
+        if (isset($orderArray['sum_prices']) ) {
+            $orderArray['sum_prices'] = round($orderArray['sum_prices'],2);
+        }
+        if (isset($orderArray['sum_prices_old']) ) {
+            $orderArray['sum_prices_old'] = round($orderArray['sum_prices_old'],2);
+        }
+        if (isset($orderArray['total_sum']) ) {
+            $orderArray['total_sum'] = round($orderArray['total_sum'],2);
+        }
+        return $orderArray;
+    }
+
+    private function getInactiveStatusIds(): array
+    {
+        return Cache::remember('inactive_status_ids', 600, function() {
+            try {
+                return $this->EvoCommerceOrderStatuses->query()
+                    ->whereIn('title', INACTIVE_STATUSES)
+                    ->pluck('id')
+                    ->all();
+            } catch (\Exception $e) {
+                Log::warning('Не получили список неактивных статусов', ['error' => $e->getMessage()]);
+                return [];
+            }
+        });
     }
 }
