@@ -62,13 +62,15 @@ class CartController extends Controller
         $validated = $request->validate([
             'product_id' => ['required', 'integer', 'exists:evo_site_content,id'],
             'quantity' => ['required', 'integer'],
+            'pharmacy_id' => ['nullable', 'integer']
         ]);
 
         $cartDTO = new CartDTO(
             user:   $request->user(),
             cart:   $request->user()->cart,
             product_id: $validated['product_id'],
-            quantity:   $validated['quantity']
+            quantity:   $validated['quantity'],
+            pharmacy_id:   $validated['pharmacy_id'] ?? null,
         );
         try {
             $this->CartService->addToCart($cartDTO);

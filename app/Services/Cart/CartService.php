@@ -6,6 +6,8 @@ use App\Http\Dto\Cart\CartDTO;
 use App\Http\Dto\Cart\CartDetailedDTO;
 use App\Http\Dto\Cart\CartPharmaciesDTO;
 use App\Http\Dto\Cart\CartProductItemDTO;
+use App\Models\EVO\EvoOffers;
+use App\Models\PharmaciesView;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use App\Models\User;
@@ -14,6 +16,7 @@ use App\Models\CartsView;
 use App\Models\CartProductPharmacyView;
 use App\Models\CartsDetailed;
 use Mockery\Matcher\Any;
+use Symfony\Component\HttpKernel\Exception\UnprocessableEntityHttpException;
 
 class CartService
 {
@@ -22,12 +25,17 @@ class CartService
         protected readonly CartsView $CartsView,
         protected readonly CartsDetailed $CartsDetailed,
         protected readonly CartProductPharmacyView $CartProductPharmacyView,
+        protected readonly EvoOffers $evoOffers,
     ) {}
 
     public function addToCart(CartDTO $cartDTO)
     {
         $quantityArr = ['quantity' => $cartDTO->quantity];
         $contains = $cartDTO->cart->products->contains($cartDTO->product_id);
+        $quantityMax = $this->getQuantity($cartDTO->product_id, $cartDTO->pharmacy_id);
+        if ($cartDTO->quantity > $quantityMax) {
+            throw new UnprocessableEntityHttpException('Больше нет в наличии');
+        }
 
         if ($contains) {
             if($cartDTO->quantity <= 0) {
@@ -362,5 +370,22 @@ class CartService
         $c = 2 * atan2(sqrt($a), sqrt(1 - $a));
 
         return $earthRadius * $c;
+    }
+
+    public function getQuantity(int $productId, int $pharmacyId = null): float
+    {
+        $offers = $this->evoOffers
+            ->query()
+            ->where('product_id', $productId)
+            ->when($pharmacyId, fn ($q) => $q
+                ->where(fn ($query) => $query
+                    ->where('pharmacy_id', $pharmacyId)
+                    ->orWhere('pharmacy_id', PharmaciesView::PHARMACY_ID_FOR_DELIVERY)
+                )
+            )
+            ->get(['stock_count']);
+        $offers = $offers->sortBy('stock_count', SORT_NATURAL);
+
+        return (float) $offers->last()->stock_count;
     }
 }
