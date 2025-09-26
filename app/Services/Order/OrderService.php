@@ -6,6 +6,7 @@ use App\Models\User;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Cache;
 use App\Models\OrderView;
 use App\Models\OrderViewJson;
 use App\Models\EVO\EvoCommerceOrderStatuses;
@@ -778,15 +779,18 @@ class OrderService
             return collect();
         }
 
-        try {
-            return DB::table('evo_pharmacies_view')
-                ->whereIn('pharmacy_id', $pharmacyIds)
-                ->get()
-                ->keyBy('pharmacy_id');
-        } catch (\Exception $e) {
-            Log::warning('Не получили информацию: ', ['pharmacy_ids' => $pharmacyIds]);
-            return collect();
-        }
+        $key = 'pharmacies:' . md5(json_encode(array_values(array_unique($pharmacyIds))));
+        return Cache::remember($key, 1600, function() use ($pharmacyIds) {
+            try {
+                return DB::table('evo_pharmacies_view')
+                    ->whereIn('pharmacy_id', $pharmacyIds)
+                    ->get()
+                    ->keyBy('pharmacy_id');
+            } catch (\Exception $e) {
+                Log::warning('Не получили информацию: ', ['pharmacy_ids' => $pharmacyIds]);
+                return collect();
+            }
+        });
     }
 
     private function transformOrderWithEnrichedData($order, ?object $pharmacy, array $orderFields, array $enrichedProducts): object
@@ -907,9 +911,12 @@ class OrderService
             ->with(['status:id,title'])
             ->where('customer_id', $userId)
             ->when(!empty($number), fn($query) => $query->where('id', $number))
-            ->when((!empty($isActive) && $isActive == 1), fn($query) => $query->whereHas('status', function($q) {
-                $q->whereNotIn('title', INACTIVE_STATUSES);
-            }))
+            ->when((!empty($isActive) && $isActive == 1), function($query) {
+                $inactiveIds = $this->getInactiveStatusIds();
+                if (!empty($inactiveIds)) {
+                    $query->whereNotIn('status_id', $inactiveIds);
+                }
+            })
             ->orderBy('id', 'desc')
             ->get();
 
@@ -944,7 +951,7 @@ class OrderService
         return $this->EvoCommerceOrderStatuses->query()->get();
     }
 
-    public function roundOrderFields(array $orderArray):array 
+    public function roundOrderFields(array $orderArray):array
     {
         if (isset($orderArray['amount']) ) {
             $orderArray['amount'] = round($orderArray['amount'],2);
@@ -959,5 +966,20 @@ class OrderService
             $orderArray['total_sum'] = round($orderArray['total_sum'],2);
         }
         return $orderArray;
+    }
+
+    private function getInactiveStatusIds(): array
+    {
+        return Cache::remember('inactive_status_ids', 600, function() {
+            try {
+                return $this->EvoCommerceOrderStatuses->query()
+                    ->whereIn('title', INACTIVE_STATUSES)
+                    ->pluck('id')
+                    ->all();
+            } catch (\Exception $e) {
+                Log::warning('Не получили список неактивных статусов', ['error' => $e->getMessage()]);
+                return [];
+            }
+        });
     }
 }
