@@ -14,19 +14,19 @@ select
     published
 
 from evo_site_content eso
-inner join evo_site_tmplvar_contentvalues estc1 on (
+left join evo_site_tmplvar_contentvalues estc1 on (
     eso.id = estc1.contentid
     and estc1.tmplvarid = 57
 )
-inner join evo_site_tmplvar_contentvalues estc2 on (
+left join evo_site_tmplvar_contentvalues estc2 on (
     eso.id = estc2.contentid
     and estc2.tmplvarid = 58
 )
-inner join evo_site_tmplvar_contentvalues estc3 on (
+left join evo_site_tmplvar_contentvalues estc3 on (
     eso.id = estc3.contentid
     and estc3.tmplvarid = 59
 )
-inner join evo_site_tmplvar_contentvalues estc4 on (
+left join evo_site_tmplvar_contentvalues estc4 on (
     eso.id = estc4.contentid
     and estc4.tmplvarid = 61
 )

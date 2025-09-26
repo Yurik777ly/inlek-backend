@@ -12,6 +12,8 @@ use Illuminate\Database\Eloquent\Model;
  */
 class PharmaciesView extends Model
 {
+    const PHARMACY_ID_FOR_DELIVERY = 17599997;
+
     protected $table = 'evo_pharmacies_view';
 
     public $timestamps = false;

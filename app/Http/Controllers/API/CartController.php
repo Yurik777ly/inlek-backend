@@ -11,6 +11,7 @@ use Illuminate\Http\Request;
 use App\Services\Cart\CartService;
 use App\Http\Dto\Cart\CartDTO;
 use App\Http\Dto\Cart\CartDetailedDTO;
+use Symfony\Component\HttpKernel\Exception\UnprocessableEntityHttpException;
 
 class CartController extends Controller
 {
@@ -69,9 +70,13 @@ class CartController extends Controller
             product_id: $validated['product_id'],
             quantity:   $validated['quantity']
         );
+        try {
+            $this->CartService->addToCart($cartDTO);
+            return $this->responseOk();
+        } catch (UnprocessableEntityHttpException $e) {
+            return $this->response(data: ['error' => $e->getMessage()], code: 422);
+        }
 
-        $this->CartService->addToCart($cartDTO);
-        return $this->responseOk();
         //return $this->getCart($request);
     }
 
