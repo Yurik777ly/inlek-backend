@@ -943,4 +943,21 @@ class OrderService
     {
         return $this->EvoCommerceOrderStatuses->query()->get();
     }
+
+    public function roundOrderFields(array $orderArray):array 
+    {
+        if (isset($orderArray['amount']) ) {
+            $orderArray['amount'] = round($orderArray['amount'],2);
+        }
+        if (isset($orderArray['sum_prices']) ) {
+            $orderArray['sum_prices'] = round($orderArray['sum_prices'],2);
+        }
+        if (isset($orderArray['sum_prices_old']) ) {
+            $orderArray['sum_prices_old'] = round($orderArray['sum_prices_old'],2);
+        }
+        if (isset($orderArray['total_sum']) ) {
+            $orderArray['total_sum'] = round($orderArray['total_sum'],2);
+        }
+        return $orderArray;
+    }
 }
