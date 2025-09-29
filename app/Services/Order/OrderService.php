@@ -24,6 +24,7 @@ use App\Services\Cart\CartService;
 use App\Http\Dto\Cart\CartDTO;
 use App\Http\Dto\Cart\CartDetailedDTO;
 use App\Models\ProductInfoViewJson;
+use App\Services\Firebase\FirebaseService;
 
 const INACTIVE_STATUSES = [
     'Отменен',
@@ -61,6 +62,7 @@ class OrderService
         protected readonly EvoCommerceOrderPayments $EvoCommerceOrderPayments,
         protected readonly PharmacyService $PharmacyService,
         protected readonly ProductInfoViewJson $ProductInfoViewJson,
+        protected readonly FirebaseService $firebaseService
     ) {}
 
     public function generateUniqueHash(): string
@@ -95,6 +97,18 @@ class OrderService
                             $user = User::query()->find($order->customer_id);
                             if ($user && method_exists($user, 'cart') && $user->cart) {
                                 $user->cart->products()->detach($productIds);
+                            }
+                            if ($user->fcm_token) {
+                                $result = $this->firebaseService->sendToDevice(
+                                    $order->user->fcm_token,
+                                    [
+                                        'title' => 'Inlek. Информация о заказе.',
+                                        'body'  => 'Ваш заказ оплачен.',
+                                    ]
+                                );
+                                if (!$result['success']) {
+                                    Log::error('Не удалось отправить push о провеении оплаты.', ['hash' => $payhash, 'error' => 'Push сообщение не отправлено.']);
+                                }
                             }
                         }
                     }
