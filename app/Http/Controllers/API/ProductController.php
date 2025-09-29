@@ -58,7 +58,12 @@ class ProductController extends Controller
             'sortby' => 'nullable|string',
             'category_id' => 'nullable|int',
         ]);
-
+        if ($request->input('recipe')) {
+            $recipe = $request->boolean('recipe');
+        } else {
+            $recipe = null;
+        }
+        $request->boolean('recipe');
         $productDto = new ProductDTO(
             priceFrom: $validated['price_from'] ?? 0,
             priceTo: $validated['price_to'] ?? 1000000,
@@ -66,7 +71,7 @@ class ProductController extends Controller
             form: $validated['form'] ?? [],
             brand: $validated['brand'] ?? [],
             country: $validated['country'] ?? [],
-            recipe: $request->boolean('recipe'),
+            recipe: $recipe,
             delivery: $request->boolean('delivery'),
             available: $request->boolean('available'),
             action: $request->boolean('action'),
@@ -196,8 +201,8 @@ class ProductController extends Controller
 
         $user = auth()->user();
         $user->notificateProducts()->attach($validated['id']);
-       
+
         return $this->responseOk();
-    } 
+    }
 
 }

@@ -154,7 +154,7 @@ from evo_site_content eso
      LEFT JOIN (
     SELECT DISTINCT product_id, 1 as available
     FROM evo_offers
-    WHERE pharmacy_id = 6864
+    WHERE pharmacy_id = 17599997
 ) delivery_pharmacy ON (eso.id = delivery_pharmacy.product_id)
          left join (
     select

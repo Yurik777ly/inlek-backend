@@ -6,7 +6,7 @@ select
     eppv.temperature, eppv.image as product_image,
     eo.pharmacy_id, epv.pagetitle as pharmacy_name, epv.alias as pharmacy_alias, epv.address, epv.schedule, epv.coordinates,
     case
-        when epv.pharmacy_id = 6864 then 'Доставка' else 'Самовывоз'
+        when epv.pharmacy_id = 17599997 then 'Доставка' else 'Самовывоз'
         end as pharmacy_delivery
 from evo_offers eo
          inner join evo_product_action_view eppv on eo.product_id = eppv.product_id

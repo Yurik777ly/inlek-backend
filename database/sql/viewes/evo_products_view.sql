@@ -97,6 +97,6 @@ from evo_site_content eso
          left join (
     select 1 as available, eo.product_id
     from evo_offers eo
-             inner join evo_pharmacies_view epv on eo.pharmacy_id = epv.pharmacy_id and eo.pharmacy_id = 6864
+             inner join evo_pharmacies_view epv on eo.pharmacy_id = epv.pharmacy_id and eo.pharmacy_id = 17599997
 ) delivery_pharmacy on (eso.id = delivery_pharmacy.product_id)
 where eso.template = 5;

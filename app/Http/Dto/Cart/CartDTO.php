@@ -12,7 +12,8 @@ class CartDTO extends BaseDTO
         public User $user,
         public ?Cart $cart = null,
         public ?int $product_id = null,
-        public ?int $quantity = null
+        public ?int $quantity = null,
+        public ?int $pharmacy_id = null,
     )
     {}
 }
