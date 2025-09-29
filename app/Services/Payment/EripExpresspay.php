@@ -72,12 +72,20 @@ class EripExpresspay extends Payment
             $payment->meta = json_encode(array_merge($webResponse, ['orderPaymentId' => $payment->id]), JSON_UNESCAPED_UNICODE);
             $payment->save();
 
-            // Для web_invoices ожидаем InvoiceUrl (публичная ссылка) либо InvoiceNo
+            // Если вернулся номер счета — запросим публичную ссылку через /v1/invoices/{InvoiceNo}?ReturnInvoiceUrl=1
+            $invoiceNo = $webResponse['InvoiceNo'] ?? $webResponse['ExpressPayInvoiceNo'] ?? null;
+            if ($invoiceNo) {
+                $public = $this->fetchInvoicePublicUrl($invoiceNo);
+                if (!empty($public)) {
+                    return $public;
+                }
+                // Если не удалось — вернем sandbox-pay ссылку как fallback
+                return rtrim($this->settings['pay_base'], '/') . '/' . $invoiceNo;
+            }
+
+            // В редких случаях API вернет сразу InvoiceUrl
             if (!empty($webResponse['InvoiceUrl'])) {
                 return $webResponse['InvoiceUrl'];
-            }
-            if (!empty($webResponse['InvoiceNo'])) {
-                return rtrim($this->settings['pay_base'], '/') . '/' . $webResponse['InvoiceNo'];
             }
         }
 
@@ -219,5 +227,47 @@ class EripExpresspay extends Payment
         }
 
         return strtoupper(hash_hmac('sha1', $result, $secret_word));
+    }
+
+    /**
+     * Получить публичную ссылку на счет через /v1/invoices/{InvoiceNo}
+     */
+    protected function fetchInvoicePublicUrl(int $invoiceNo): ?string
+    {
+        $base = $this->settings['test']
+            ? 'https://sandbox-api.express-pay.by'
+            : 'https://api.express-pay.by';
+
+        $params = [
+            'Token'           => $this->settings['token'],
+            'InvoiceNo'       => $invoiceNo,
+            'ReturnInvoiceUrl'=> 1,
+        ];
+
+        // Подпись для details: token, invoiceno, returninvoiceurl
+        $normalized = array_change_key_case($params, CASE_LOWER);
+        $concat = ($normalized['token'] ?? '') . ($normalized['invoiceno'] ?? '') . ($normalized['returninvoiceurl'] ?? '');
+        $sig = strtoupper(hash_hmac('sha1', $concat, $this->settings['secret']));
+
+        $query = http_build_query([
+            'token'            => $this->settings['token'],
+            'InvoiceNo'        => $invoiceNo,
+            'ReturnInvoiceUrl' => 1,
+            'signature'        => $sig,
+        ]);
+
+        $url = $base . '/v1/invoices/' . $invoiceNo . '?' . $query;
+
+        $ch = curl_init($url);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+        $response = curl_exec($ch);
+        curl_close($ch);
+
+        $decoded = json_decode($response, true);
+        if (is_array($decoded) && !empty($decoded['InvoiceUrl'])) {
+            return $decoded['InvoiceUrl'];
+        }
+        return null;
     }
 }
