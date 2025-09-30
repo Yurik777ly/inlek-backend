@@ -25,7 +25,7 @@ class SendPromotionsCommand extends FirebaseCommand
         $promotion = ActionView::where('create_dttm','>=', now()->subDays(self::LIMIT_DAYS))
         ->where('published', 1)
         ->inRandomOrder()
-        ->get()
+        ->get(['pagetitle', 'published'])
         ->first();
 
         if ($promotion) {

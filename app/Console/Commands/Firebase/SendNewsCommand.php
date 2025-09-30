@@ -25,7 +25,7 @@ class SendNewsCommand extends FirebaseCommand
         $news = NewsView::where('create_dttm','>=', now()->subDays(self::LIMIT_DAYS))
         ->where('published', 1)
         ->inRandomOrder()
-        ->get()
+        ->get(['published', 'pagetitle'])
         ->first();
 
         if ($news) {
