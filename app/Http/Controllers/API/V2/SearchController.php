@@ -50,20 +50,49 @@ class SearchController extends Controller
             ->select([
                 'product_id',
                 'product_charachters',
-                'action_json',
                 'promocodes_json',
-                'categories_json',
+                'product_price_from',
+                'product_price_from_old',
+                'product_price_from_percent',
+                'is_available',
+                'delivery',
             ])
             ->get()
-            ->keyBy('product_id');
+            ->keyBy('product_id')
+            ->map(function ($item) {
+                $data = $item->toArray();
+
+                $price = !empty($data['product_price_from']) ? (float)$data['product_price_from'] : 0;
+                $oldPrice = !empty($data['product_price_from_old']) ? (float)$data['product_price_from_old'] : null;
+                $discountPercent = !empty($data['product_price_from_percent']) ? (float)$data['product_price_from_percent'] : null;
+
+                $hasDiscount = $oldPrice !== null && $oldPrice > $price && $price > 0;
+
+                $data['price'] = $price;
+                $data['price_old'] = $hasDiscount ? $oldPrice : null;
+                $data['discount_percent'] = $hasDiscount ? $discountPercent : null;
+
+                if ($hasDiscount && !$discountPercent) {
+                    $data['discount_percent'] = round((($oldPrice - $price) / $oldPrice) * 100);
+                }
+
+                return $data;
+            });
 
         $data['products'] = collect($data['products'])->map(function ($product) use ($extraData) {
             $productId = $product['id'];
 
-            unset($product['price'], $product['price_full']);
-
             if ($extraData->has($productId)) {
-                $product = array_merge($product, $extraData[$productId]->toArray());
+                $productData = $extraData[$productId];
+                $product = array_merge($product, $productData);
+
+                // Set the price fields that will be used by the frontend
+                $product['price'] = $productData['price'];
+                if (isset($productData['price_old']) && $productData['price_old'] > $productData['price']) {
+                    $product['price_old'] = $productData['price_old'];
+                    $product['discount_percent'] = $productData['discount_percent'] ??
+                        round((($productData['price_old'] - $productData['price']) / $productData['price_old']) * 100);
+                }
             }
 
             return $product;
