@@ -19,8 +19,8 @@ class CheckUpdatedOrderStatusCommand extends FirebaseCommand
     public function handle()
     { 
         $updatedOrders = OrderStatusChange::with('user')
-                                        ->get(['order_id', 'new_status_id', 'old_status_id', 'id']);
-        
+            ->get(['order_id', 'new_status_id', 'old_status_id', 'id', 'user_id']);
+
         $sentCount = 0;
       
         if ($updatedOrders->count() > 0) {

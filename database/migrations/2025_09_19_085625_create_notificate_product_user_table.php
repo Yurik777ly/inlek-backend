@@ -28,8 +28,6 @@ return new class extends Migration
               ->references('id')
               ->on('users')
               ->onDelete('cascade');
-            // Сообщать о пуступлении в конкретную аптеку или нет?
-            // $table->integer('pharmacy_id')->nullable();
             
             $table->unique(['product_id', 'user_id']);
         });
@@ -40,6 +38,12 @@ return new class extends Migration
      */
     public function down(): void
     {
+      Schema::table('notificate_product_user', function (Blueprint $table) {
+        $table->dropForeign(['product_id', 'user_id']);
+         $table->dropForeign(['user_id']);
+         $table->dropForeign(['product_id']);
+      });
+           
         Schema::dropIfExists('notificate_product_user');
     }
 };

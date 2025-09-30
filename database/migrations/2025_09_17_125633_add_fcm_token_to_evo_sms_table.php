@@ -11,7 +11,7 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::table('evo_sms', function (Blueprint $table) {
+        Schema::table('sms', function (Blueprint $table) {
             $table->string('fcm_token')->nullable();
         });
     }
@@ -21,7 +21,7 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::table('evo_sms', function (Blueprint $table) {
+        Schema::table('sms', function (Blueprint $table) {
             $table->dropColumn('fcm_token');
         });
     }

@@ -161,7 +161,6 @@ protected function updateNotificationTimes(array $notificationsToUpdate): void
             ->whereIn('product_id', $productIds)
             ->update([
                 'notified_at' => $now,
-                'updated_at' => $now
             ]);
     }
 
