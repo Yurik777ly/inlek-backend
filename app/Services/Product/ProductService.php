@@ -3,6 +3,7 @@
 namespace App\Services\Product;
 
 use App\Http\Dto\Product\ProductDTO;
+use App\Models\PharmaciesView;
 use App\Models\ProductActionView;
 use App\Models\DailyProductsView;
 use App\Models\ActionView;
@@ -12,6 +13,7 @@ use App\Models\ProductInfoViewJsonDetailed;
 use App\Models\ProductPharmacyJson;
 use App\Models\ProductInfoViewJsonOptNoAct;
 use App\Models\ProductPharmacyView;
+use App\Services\Rees46\Rees46;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use App\Services\Product\ContentValueService;
@@ -114,6 +116,8 @@ class ProductService
         $product = $this->productInfoViewJsonDetailed->query()->where('product_id', $productDto->productId)
             ->get(['product_id','product_charachters','action_json','promocodes_json','categories_json', 'brand_products', 'similar_products', 'related_products', 'category_products', 'instruction'])->first();
         if ($product) {
+            $categories = $product->categories_json;
+            $product->similar_products = Rees46::getRecommendation(last($categories)['category_id']);
             $product = $product->toArray();
         }
         return $product;
@@ -203,7 +207,8 @@ class ProductService
                 '=',
                 'evo_product_info_view_json_opt_noact.product_id'
             )
-            ->where('evo_product_pharmacy_json.product_id', $productDto->productId);
+            ->where('evo_product_pharmacy_json.product_id', $productDto->productId)
+            ->where('evo_product_pharmacy_json.pharmacy_id', '<>', PharmaciesView::PHARMACY_ID_FOR_DELIVERY);
 
         $query->when(!empty($productDto->pharmacyId), function($q) use($productDto) {
             return $q->where('pharmacy_id', $productDto->pharmacyId);

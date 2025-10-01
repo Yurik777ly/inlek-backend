@@ -256,6 +256,9 @@ class CartService
 
             foreach ($entry['pharmacies'] as $ph) {
                 $phId = $ph['pharmacy_id'];
+                if ($phId === PharmaciesView::PHARMACY_ID_FOR_DELIVERY) {
+                    continue;
+                }
 
                 if (!isset($pharmacies[$phId])) {
                     $pharmacies[$phId] = [

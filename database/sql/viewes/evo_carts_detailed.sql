@@ -247,7 +247,8 @@ SELECT
                                                                  'product_price_from_old', epv.product_price_from_old,
                                                                  'product_price_from_percent', epv.product_price_from_percent,
                                                                  'product_sticker', epv.product_sticker,
-                                                                 'delivery', epv.delivery
+                                                                 'delivery', epv.delivery,
+                                                                 'other_pharmacy', (select 1 as available FROM evo_offers WHERE epv.pharmacy_id <> evo_offers.pharmacy_id AND evo_offers.pharmacy_id <> 17599997 and pp2.product_id = evo_offers.product_id GROUP BY evo_offers.product_id)
                                                          )
                                                   FROM evo_products_view epv
                                                   WHERE epv.product_id = pp2.product_id
