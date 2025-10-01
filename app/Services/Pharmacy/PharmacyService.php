@@ -37,7 +37,7 @@ class PharmacyService
                     ]);
     }
 
-    public function getPharmacyById($id = 6864): Collection
+    public function getPharmacyById($id = PharmaciesView::PHARMACY_ID_FOR_DELIVERY): Collection
     {
         $queryObject = $this->PharmaciesView
                     ->query()

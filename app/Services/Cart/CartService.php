@@ -32,7 +32,14 @@ class CartService
     {
         $quantityArr = ['quantity' => $cartDTO->quantity];
         $contains = $cartDTO->cart->products->contains($cartDTO->product_id);
-        $quantityMax = $this->getQuantity($cartDTO->product_id, $cartDTO->pharmacy_id);
+
+        $pharmacyIdBySelf = $cartDTO->pharmacy_id;
+        if (!$pharmacyIdBySelf) {
+            $pharmacyIdBySelf = $cartDTO->cart->pharmacy_id;
+        }
+
+        $quantityMax = $this->getQuantity($cartDTO->product_id, $pharmacyIdBySelf);
+      
         if ($cartDTO->quantity > $quantityMax) {
             throw new UnprocessableEntityHttpException('Больше нет в наличии');
         }

@@ -2,6 +2,7 @@
 
 namespace App\Services\Order;
 
+use App\Models\PharmaciesView;
 use App\Models\User;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -48,8 +49,6 @@ const SELF_GET_TITLES = [
 class OrderService
 {
     private array $productCache = [];
-
-    const DEFAULT_PHARMACY = 6864;
 
     public function __construct(
         protected readonly User $User,
@@ -125,7 +124,7 @@ class OrderService
     public function create($orderArray)
     {
 
-            $orderArray['pharmacy_id'] = ($orderArray['pharmacy_id'] == 0) ? self::DEFAULT_PHARMACY : $orderArray['pharmacy_id'];
+            $orderArray['pharmacy_id'] = ($orderArray['pharmacy_id'] == 0) ? PharmaciesView::PHARMACY_ID_FOR_DELIVERY : $orderArray['pharmacy_id'];
 
             return DB::transaction(function () use ($orderArray) {
                 // Обновляем информацию о пользователе
