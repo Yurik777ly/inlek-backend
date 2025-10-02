@@ -41,7 +41,7 @@ class CartController extends Controller
         ]);
 
         $cartDTO = new CartDetailedDTO(
-            pharmacyId: $validated['pharmacy_id'] ?? null,
+            pharmacyId: $validated['pharmacy_id'],
             deliveryZone: $validated['delivery_zone'] ?? null,
             promocodes: $validated['promocodes'] ?? ''
         );

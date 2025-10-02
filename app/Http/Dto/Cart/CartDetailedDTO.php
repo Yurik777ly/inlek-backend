@@ -9,7 +9,7 @@ use App\Models\User;
 class CartDetailedDTO extends BaseDTO
 {
     public function __construct(
-        public ?int $pharmacyId,
+        public int $pharmacyId,
         public ?string $deliveryZone,
         public ?string $promocodes
     )

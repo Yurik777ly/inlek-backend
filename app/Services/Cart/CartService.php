@@ -168,9 +168,6 @@ class CartService
         $cart->pharmacy_id = $cartDTO->pharmacyId;
         $cart->promocodes = $cartDTO->promocodes;
         $cart->delivery_zone = $cartDTO->deliveryZone ?? null;
-        if ($cartDTO->pharmacyId) {
-            $cart->pharmacy_id = $cartDTO->pharmacyId;
-        }
         $cart->save();
 
         $dataModel = $this->CartsDetailed
