@@ -131,8 +131,10 @@ class CartController extends Controller
             products:  $itemsDto,
         );
 
+        $withoutDelivery = true;
+
         return $this->responseOk(
-            $this->CartService->getProductByPharmacies($dto)
+            $this->CartService->getProductByPharmacies($dto, $withoutDelivery)
         );
     }
 

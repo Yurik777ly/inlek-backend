@@ -215,7 +215,7 @@ class CartService
         return $data;
     }
 
-    public function getProductByPharmacies(CartPharmaciesDTO $dto)
+    public function getProductByPharmacies(CartPharmaciesDTO $dto, bool $withoutDelivery = false)
     {
         $userId = auth()->user()->id;
         $record = CartProductPharmacyView::query()
@@ -266,7 +266,9 @@ class CartService
 
             foreach ($entry['pharmacies'] as $ph) {
                 $phId = $ph['pharmacy_id'];
-                if ($phId === PharmaciesView::PHARMACY_ID_FOR_DELIVERY) {
+                
+                if (
+                    $phId === PharmaciesView::PHARMACY_ID_FOR_DELIVERY && $withoutDelivery) {
                     continue;
                 }
 
