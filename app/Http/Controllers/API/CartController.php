@@ -46,7 +46,9 @@ class CartController extends Controller
             promocodes: $validated['promocodes'] ?? ''
         );
 
-        $this->CartService->setUserGeo($validated['geo_lat'] ?? '', $validated['geo_long'] ?? '');
+        if(isset($validated['geo_lat']) && isset($validated['geo_long'])) {
+            $this->CartService->setUserGeo($validated['geo_lat'], $validated['geo_long']);
+        }
 
         return $this->responseOk($this->CartService->getCartDetailed($cartDTO));
     }

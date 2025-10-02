@@ -20,6 +20,9 @@ use Symfony\Component\HttpKernel\Exception\UnprocessableEntityHttpException;
 
 class CartService
 {
+    const MINSK_CENTER_LAT = 53.9;
+    const MINSK_CENTER_LONG = 27.5667;
+    
     public function __construct(
         private readonly Cart $Cart,
         protected readonly CartsView $CartsView,
@@ -189,8 +192,8 @@ class CartService
         );
 
         $pharmDto = new CartPharmaciesDTO(
-            geoLat: 53.9,
-            geoLong: 27.5667,
+            geoLat: ($cart->geo_lat > 0) ? $cart->geo_lat : self::MINSK_CENTER_LAT,
+            geoLong: ($cart->geo_long > 0) ? $cart->geo_long : self::MINSK_CENTER_LONG,
             products: $itemsDto,
         );
 
