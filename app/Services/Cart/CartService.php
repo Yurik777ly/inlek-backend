@@ -399,6 +399,9 @@ class CartService
             ->get(['stock_count']);
         $offers = $offers->sortBy('stock_count', SORT_NATURAL);
 
-        return (float) $offers->last()->stock_count;
+        if (count($offers) > 0) {
+            return (float) $offers->last()->stock_count;
+        }
+        return 0;
     }
 }
