@@ -33,7 +33,7 @@ class CartController extends Controller
     public function getCartDetailed(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'pharmacy_id' => ['required', 'integer'],
+            'pharmacy_id' => ['nullable', 'integer'],
             'promocodes' => ['nullable', 'string'],
             'delivery_zone' => ['nullable', 'string'],
             'geo_lat' => ['nullable', 'string'],
