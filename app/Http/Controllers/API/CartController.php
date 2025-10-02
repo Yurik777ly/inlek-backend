@@ -5,6 +5,7 @@ namespace App\Http\Controllers\API;
 use App\Http\Controllers\Controller;
 use App\Http\Dto\Cart\CartPharmaciesDTO;
 use App\Http\Dto\Cart\CartProductItemDTO;
+use App\Models\PharmaciesView;
 use App\Services\Order\OrderService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -33,7 +34,7 @@ class CartController extends Controller
     public function getCartDetailed(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'pharmacy_id' => ['required', 'integer'],
+            'pharmacy_id' => ['nullable', 'integer'],
             'promocodes' => ['nullable', 'string'],
             'delivery_zone' => ['nullable', 'string'],
             'geo_lat' => ['nullable', 'string'],
@@ -41,7 +42,7 @@ class CartController extends Controller
         ]);
 
         $cartDTO = new CartDetailedDTO(
-            pharmacyId: $validated['pharmacy_id'],
+            pharmacyId: $validated['pharmacy_id'] ?? PharmaciesView::PHARMACY_ID_FOR_DELIVERY,
             deliveryZone: $validated['delivery_zone'] ?? null,
             promocodes: $validated['promocodes'] ?? ''
         );
