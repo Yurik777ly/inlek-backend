@@ -17,6 +17,7 @@ use App\Models\CartProductPharmacyView;
 use App\Models\CartsDetailed;
 use Mockery\Matcher\Any;
 use Symfony\Component\HttpKernel\Exception\UnprocessableEntityHttpException;
+use Illuminate\Support\Facades\Cache;
 
 class CartService
 {
@@ -153,11 +154,26 @@ class CartService
 
     public function getCartDetailed(CartDetailedDTO $cartDTO)
     {
+
+        $lockKey = 'cart_detailed:' . auth()->user()->id;
+        if (Cache::has($lockKey)) {
+            return response()->json(['error' => 'Request in progress'], 429);
+        }
+
+        Cache::put($lockKey, true, 1);
+
         $cart = $this->Cart->query()->where('user_id', auth()->user()->id)->first();
-        $cart->pharmacy_id = $cartDTO->pharmacyId;
-        $cart->promocodes = $cartDTO->promocodes;
-        $cart->delivery_zone = $cartDTO->deliveryZone ?? null;
-        $cart->save();
+        if (
+            $cart->pharmacy_id != $cartDTO->pharmacyId || 
+            $cart->promocodes != $cartDTO->promocodes ||
+            $cart->delivery_zone != $cartDTO->deliveryZone ?? null
+        ) {
+            $cart->pharmacy_id = $cartDTO->pharmacyId;
+            $cart->promocodes = $cartDTO->promocodes;
+            $cart->delivery_zone = $cartDTO->deliveryZone ?? null;
+            $cart->save();
+        }
+
 
         $dataModel = $this->CartsDetailed
             ->query()
@@ -398,10 +414,22 @@ class CartService
 
     public function getCartDetailedWithoutChoosenPharm(CartDetailedDTO $cartDTO)
     {
+        $lockKey = 'cart_detailed:' . auth()->user()->id;
+        if (Cache::has($lockKey)) {
+        return response()->json(['error' => 'Request in progress'], 429);
+        }
+
+        Cache::put($lockKey, true, 1);
+
         $cart = $this->Cart->query()->where('user_id', auth()->user()->id)->first();
-        $cart->promocodes = $cartDTO->promocodes;
-        $cart->delivery_zone = $cartDTO->deliveryZone ?? null;
-        $cart->save();
+        if ( 
+            $cart->promocodes != $cartDTO->promocodes ||
+            $cart->delivery_zone != $cartDTO->deliveryZone ?? null
+        ) {
+            $cart->promocodes = $cartDTO->promocodes;
+            $cart->delivery_zone = $cartDTO->deliveryZone ?? null;
+            $cart->save();
+        }
 
         $data =$this->getCart();
 
