@@ -34,15 +34,11 @@ class CartService
     public function addToCart(CartDTO $cartDTO)
     {
         DB::transaction(function () use ($cartDTO) {
-            $pharmacyIdBySelf = $cartDTO->pharmacy_id;
+            $pharmacyId = $cartDTO->pharmacy_id;
             $cart = $cartDTO->cart;
             $productId = $cartDTO->product_id;
 
-            if (!$pharmacyIdBySelf) {
-                $pharmacyIdBySelf = $cartDTO->cart->pharmacy_id;
-            }
-
-            $quantityMax = $this->getQuantity($productId, $pharmacyIdBySelf);
+            $quantityMax = $this->getQuantity($productId, $pharmacyId);
 
             if ($cartDTO->quantity > $quantityMax) {
                 throw new UnprocessableEntityHttpException('Больше нет в наличии');
