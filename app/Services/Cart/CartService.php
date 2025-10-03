@@ -399,4 +399,82 @@ class CartService
         }
         return 0;
     }
+
+    public function getCartDetailedWithoutChoosenPharm(CartDetailedDTO $cartDTO)
+    {
+        $cart = $this->Cart->query()->where('user_id', auth()->user()->id)->first();
+        $cart->promocodes = $cartDTO->promocodes;
+        $cart->delivery_zone = $cartDTO->deliveryZone ?? null;
+        $cart->save();
+
+        $data =$this->getCart();
+
+        if (!$data) {
+             return []; 
+        }
+
+        $data = $this->formatCartData($data);
+       
+        $data['pharmacy_name'] = 'Аптека не выбрана';
+        $data['pharmacy_address'] = 'Аптека не выбрана';
+        $data['pharmacy_availability'] = 'full';
+        
+        return $data;
+    }
+
+    private function formatCartData (CartsView $cartsView):array {
+        $cartsView = $cartsView->toArray();
+
+        $products = $cartsView['product_info'];
+
+        $finalArray = [
+            'user_id' => $cartsView['user_id'],
+            'cart' => [
+                'totals' => [
+                    "delivery_sum" => null,
+                    "total_discount" => 0,
+                    "total_price_old" => 0,
+                    "total_final_price" => 0,
+                    "discount_only_promos" => 0,
+                ],
+                'cart_id'  => $cartsView['cart']['cart_id'],
+                'user_id'  => $cartsView['user_id'],
+                'products' => [],
+                'all_promocodes' => [],
+                'entered_promocodes' => '',
+            ],
+            'distance' => null,
+            'availability_priority' => 0
+        ];
+        $totalSum = 0;
+        foreach ($products as $product ) {
+            $sumProduct = round($product['quantity']*$product['product_charachters']['product_price_from'],2);
+            $totalSum = $totalSum+$sumProduct;
+            $finalArray['cart']['products'][] = [
+                'prices' => [
+                    'price' => round($product['product_charachters']['product_price_from'], 2),
+                    'final_price' => round($product['product_charachters']['product_price_from'], 2),
+                    'price_old' => round($product['product_charachters']['product_price_from'], 2),
+                ],
+                'quantity' => $product['quantity'],
+                'product_id' => $product['product_charachters']['product_id'],
+                'availability' => 'full',
+                'action_json' => $product['action_json'],
+                'product_info' => $product['product_charachters'],
+                'product_totals' =>  [
+                    "total" => $sumProduct,
+                    "total_old" => $sumProduct,
+                    "final_total" => $sumProduct,
+                    "final_total_with_promos" => $sumProduct,
+                    "total_discount_only_promos" => 0.0,
+                    "total_discount_with_promos" => 0.0,
+                    "total_discount_without_promos" => 0.0,
+                ],
+            ];
+        }
+        $finalArray['cart']['totals']['total_price_old'] = round($totalSum, 2);
+        $finalArray['cart']['totals']['total_final_price'] = round($totalSum, 2);
+
+        return $finalArray;
+    }
 }

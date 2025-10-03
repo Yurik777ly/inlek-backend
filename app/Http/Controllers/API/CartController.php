@@ -42,7 +42,7 @@ class CartController extends Controller
         ]);
 
         $cartDTO = new CartDetailedDTO(
-            pharmacyId: $validated['pharmacy_id'] ?? PharmaciesView::PHARMACY_ID_FOR_DELIVERY,
+            pharmacyId: $validated['pharmacy_id'] ?? null,
             deliveryZone: $validated['delivery_zone'] ?? null,
             promocodes: $validated['promocodes'] ?? ''
         );
@@ -51,7 +51,13 @@ class CartController extends Controller
             $this->CartService->setUserGeo($validated['geo_lat'], $validated['geo_long']);
         }
 
-        return $this->responseOk($this->CartService->getCartDetailed($cartDTO));
+        if (isset($validated['pharmacy_id'])) {
+            return $this->responseOk($this->CartService->getCartDetailed($cartDTO));
+        }
+        else {
+            return $this->responseOk($this->CartService->getCartDetailedWithoutChoosenPharm($cartDTO));
+        }
+        
     }
 
     public function getProductPharmacyCart(Request $request): JsonResponse
