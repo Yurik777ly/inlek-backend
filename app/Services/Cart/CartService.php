@@ -435,7 +435,6 @@ class CartService
 	            	carts.user_id = ?
 	            AND evo_product_pharmacy_view.product_id IN ('.$need.')
 	            and evo_product_pharmacy_view.stock_count > 0
-	            and evo_product_pharmacy_view.pharmacy_id <> '.PharmaciesView::PHARMACY_ID_FOR_DELIVERY.'
 	            ORDER BY distance_meters, pharmacy_id', [$userId, ...$requestedIds]);
 
         if (!$result) {
@@ -460,11 +459,6 @@ class CartService
                 'products' => $products[$item->pharmacy_id],
             ];
         }
-        $productDetails = DB::table('evo_products_view')
-            ->select('product_id', 'pagetitle', 'image', 'is_recipe', 'is_alcohol')
-            ->whereIn('product_id', $requestedIds)
-            ->get()
-            ->keyBy('product_id');
 
         foreach ($pharmacies as $key => &$pharmacy) {
             $existing = array_column($pharmacies[$key]['products'], 'product_id');
