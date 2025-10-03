@@ -187,7 +187,7 @@ class CartService
             products: $itemsDto,
         );
 
-        $pharmacies = $this->getProductByPharmacies($pharmDto);
+        $pharmacies = $this->getPriorityPharmacy($pharmDto);
 
         $selected = collect($pharmacies)
             ->firstWhere('pharmacy_id', $cartDTO->pharmacyId);
@@ -389,6 +389,129 @@ class CartService
             ->get(['stock_count']);
         $offers = $offers->sortBy('stock_count', SORT_NATURAL);
 
+        if ($offers->count() === 0) {
+            return 0;
+        }
+
         return (float) $offers->last()->stock_count;
+    }
+
+    public function getPriorityPharmacy(CartPharmaciesDTO $dto)
+    {
+        $need = implode(', ', array_fill(0, count($dto->products), '?'));
+        $userId = auth()->user()->id;
+        $requestedIds = array_map(fn($item) => $item->productId, $dto->products);
+
+        $result = DB::select('SELECT
+	            carts.user_id,
+	            carts.id as cart_id,
+	            cart_evo_site_content.evo_site_content_id AS product_id,
+                        cart_evo_site_content.quantity AS required_quantity,
+                        evo_product_pharmacy_view.pharmacy_id,
+                        evo_product_pharmacy_view.pharmacy_name,
+                        evo_product_pharmacy_view.coordinates,
+                        evo_product_pharmacy_view.schedule,
+                        evo_product_pharmacy_view.address,
+                        evo_product_pharmacy_view.stock_count,
+                        evo_product_pharmacy_view.price,
+                        evo_product_pharmacy_view.price_old,
+	            IF(evo_product_pharmacy_view.stock_count >= cart_evo_site_content.quantity, \'full\', \'part\') AS availability,
+	            IF(evo_product_pharmacy_view.stock_count >= cart_evo_site_content.quantity, 0, IF(evo_product_pharmacy_view.stock_count > 0, 1, 2)) AS pharmacy_rang,
+                    CASE WHEN carts.geo_lat = \'\'  OR carts.geo_long = \'\' THEN 0
+                 ELSE ROUND( ST_Distance_Sphere (
+	            				POINT ( carts.geo_long, carts.geo_lat ),
+	            				POINT ( CAST( SUBSTRING_INDEX( evo_product_pharmacy_view.coordinates, \',\', - 1 ) AS DECIMAL ( 10, 6 )), CAST( SUBSTRING_INDEX( evo_product_pharmacy_view.coordinates, \',\', 1 ) AS DECIMAL ( 10, 6 )))  )
+	            		)
+	            	END AS distance_meters
+	            FROM
+	            	carts
+	            	LEFT JOIN evo_product_pharmacy_view ON evo_product_pharmacy_view.pharmacy_id <> '.PharmaciesView::PHARMACY_ID_FOR_DELIVERY.'
+	            	JOIN cart_evo_site_content  ON evo_product_pharmacy_view.product_id = cart_evo_site_content.evo_site_content_id
+	            WHERE
+	            	carts.user_id = ?
+	            AND evo_product_pharmacy_view.product_id IN ('.$need.')
+	            and evo_product_pharmacy_view.stock_count > 0
+	            and evo_product_pharmacy_view.pharmacy_id <> '.PharmaciesView::PHARMACY_ID_FOR_DELIVERY.'
+	            ORDER BY distance_meters, pharmacy_id', [$userId, ...$requestedIds]);
+
+        if (!$result) {
+            return [];
+        }
+        $quantityMap = [];
+        foreach ($dto->products as $item) {
+            $quantityMap[$item->productId] = $item->quantity;
+        }
+
+        $pharmacies = [];
+        $products = [];
+        foreach ($result as $item) {
+            $products[$item->pharmacy_id][$item->product_id] = (array) $item;
+            $pharmacies[$item->pharmacy_id] = [
+                'pharmacy_name' => $item->pharmacy_name,
+                'coordinates' => $item->coordinates,
+                'stock_count' => $item->stock_count,
+                'required_quantity' => $item->required_quantity,
+                'pharmacy_id' => $item->pharmacy_id,
+                'address' => $item->address,
+                'products' => $products[$item->pharmacy_id],
+            ];
+        }
+        $productDetails = DB::table('evo_products_view')
+            ->select('product_id', 'pagetitle', 'image', 'is_recipe', 'is_alcohol')
+            ->whereIn('product_id', $requestedIds)
+            ->get()
+            ->keyBy('product_id');
+
+        foreach ($pharmacies as $key => &$pharmacy) {
+            $existing = array_column($pharmacies[$key]['products'], 'product_id');
+            foreach ($requestedIds as $id) {
+                if (!in_array($id, $existing, true)) {
+                    $pharmacy['products'][] = [
+                        'product_id' => $id,
+                        'requested_quantity' => $quantityMap[$id],
+                        'stock_count' => 0.0,
+                        'availability' => 'absent',
+                        "pharmacy_id" => $key,
+                    ];
+                }
+            }
+        }
+        unset($pharmacy);
+        foreach ($pharmacies as &$ph) {
+            $productAvailabilities = array_column($ph['products'], 'availability');
+            $unique = array_values(array_unique($productAvailabilities));
+
+            if (count($unique) === 1 && $unique[0] === 'absent') {
+                $ph['availability'] = 'absent';
+            } elseif (in_array('part', $productAvailabilities, true)
+                || in_array('absent', $productAvailabilities, true)) {
+                $ph['availability'] = 'part';
+            } else {
+                $ph['availability'] = 'full';
+            }
+        }
+
+        $availabilityPriority = [
+            'full'   => 0,
+            'part'   => 1,
+            'absent' => 2,
+        ];
+
+        usort($pharmacies, function ($a, $b) use ($availabilityPriority) {
+            $pa = $availabilityPriority[$a['availability'] ?? 'absent'] ?? PHP_INT_MAX;
+            $pb = $availabilityPriority[$b['availability'] ?? 'absent'] ?? PHP_INT_MAX;
+
+            if ($pa !== $pb) {
+                return $pa <=> $pb;
+            }
+
+            $da = isset($a['distance_meters']) ? (float)$a['distance_meters'] : INF;
+            $db = isset($b['distance_meters']) ? (float)$b['distance_meters'] : INF;
+
+            return $da <=> $db;
+        });
+
+        return array_values($pharmacies);
+
     }
 }
