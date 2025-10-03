@@ -26,23 +26,21 @@ class Oplati extends Payment
      */
     public function getPaymentLink($order = '', $payment = '')
     {
-        $amountMinor = (int) round($payment->amount * 100);
-
         $payloadV2 = [
             'shift'        => '1',
-            'sum'          => $amountMinor,
+            'sum'          => $payment->amount,
             'orderNumber'  => (string)($order->id . '-' . $payment->id),
             'details'      => [
                 'title'       => 'Оплата заказа #' . $order->id,
-                'amountTotal' => $amountMinor,
+                'amountTotal' => $payment->amount,
                 'items'       => [
                     [
                         'type'     => 1,
                         'name'     => 'Заказ #' . $order->id,
                         'quantity' => 1,
                         'unit'     => 'шт',
-                        'price'    => $amountMinor,
-                        'cost'     => $amountMinor,
+                        'price'    => $payment->amount,
+                        'cost'     => $payment->amount,
                     ],
                 ],
             ],
