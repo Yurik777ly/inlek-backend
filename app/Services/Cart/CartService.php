@@ -33,39 +33,32 @@ class CartService
 
     public function addToCart(CartDTO $cartDTO)
     {
-        $quantityArr = ['quantity' => $cartDTO->quantity];
-        $contains = $cartDTO->cart->products->contains($cartDTO->product_id);
+        DB::transaction(function () use ($cartDTO) {
+            $pharmacyIdBySelf = $cartDTO->pharmacy_id;
+            $cart = $cartDTO->cart;
+            $productId = $cartDTO->product_id;
+            
+            if (!$pharmacyIdBySelf) {
+                $pharmacyIdBySelf = $cartDTO->cart->pharmacy_id;
+            }
+           
+            $quantityMax = $this->getQuantity($productId, $pharmacyIdBySelf);
+           
+            if ($cartDTO->quantity > $quantityMax) {
+                throw new UnprocessableEntityHttpException('Больше нет в наличии');
+            }
 
-        $pharmacyIdBySelf = $cartDTO->pharmacy_id;
-        if (!$pharmacyIdBySelf) {
-            $pharmacyIdBySelf = $cartDTO->cart->pharmacy_id;
-        }
+            $lockedCart = Cart::where('id', $cart->id)->lockForUpdate()->first();
 
-        $quantityMax = $this->getQuantity($cartDTO->product_id, $pharmacyIdBySelf);
-      
-        if ($cartDTO->quantity > $quantityMax) {
-            throw new UnprocessableEntityHttpException('Больше нет в наличии');
-        }
-
-        if ($contains) {
-            if($cartDTO->quantity <= 0) {
-                $cartDTO->cart->products()->detach(
-                    $cartDTO->product_id
-                );
+            if ($cartDTO->quantity <= 0) {
+                $lockedCart->products()->detach($productId);
             } else {
-                $cartDTO->cart->products()->updateExistingPivot(
-                    $cartDTO->product_id,
-                    $quantityArr
-                );
+                $lockedCart->products()->syncWithoutDetaching([
+                    $productId => ['quantity' => $cartDTO->quantity]
+                ]);
             }
-        } else {
-            if($cartDTO->quantity >0) {
-                $cartDTO->cart->products()->attach(
-                    $cartDTO->product_id,
-                    $quantityArr
-                );
-            }
-        }
+
+        });
     }
 
     public function addMultipleToCart(User $user, array $products): void
