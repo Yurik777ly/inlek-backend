@@ -145,10 +145,8 @@ class OrderService
                 // Сохраняем товары заказа
                 $this->saveOrderProducts($orderId, $cartData['orderProducts'], $orderArray['pharmacy_id']);
 
-                // Очищаем корзину только для офлайн-оплаты (cash). Для онлайн-оплат очистим после подтверждения платежа.
-                if (($orderArray['payment'] ?? '') === 'cash') {
-                    $this->clearCartProducts(array_column($cartData['orderProducts'], 'product_id'));
-                }
+                // Очищаем корзину
+                $this->clearCartProducts(array_column($cartData['orderProducts'], 'product_id'));
 
                 // Создаем запись в истории
                 $this->createOrderHistory($orderId);
