@@ -20,6 +20,9 @@ use Symfony\Component\HttpKernel\Exception\UnprocessableEntityHttpException;
 
 class CartService
 {
+    const MINSK_CENTER_LAT = 53.9;
+    const MINSK_CENTER_LONG = 27.5667;
+
     public function __construct(
         private readonly Cart $Cart,
         protected readonly CartsView $CartsView,
@@ -30,32 +33,32 @@ class CartService
 
     public function addToCart(CartDTO $cartDTO)
     {
-        $quantityArr = ['quantity' => $cartDTO->quantity];
-        $contains = $cartDTO->cart->products->contains($cartDTO->product_id);
-        $quantityMax = $this->getQuantity($cartDTO->product_id, $cartDTO->pharmacy_id);
-        if ($cartDTO->quantity > $quantityMax) {
-            throw new UnprocessableEntityHttpException('Больше нет в наличии');
-        }
+        DB::transaction(function () use ($cartDTO) {
+            $pharmacyIdBySelf = $cartDTO->pharmacy_id;
+            $cart = $cartDTO->cart;
+            $productId = $cartDTO->product_id;
 
-        if ($contains) {
-            if($cartDTO->quantity <= 0) {
-                $cartDTO->cart->products()->detach(
-                    $cartDTO->product_id
-                );
+            if (!$pharmacyIdBySelf) {
+                $pharmacyIdBySelf = $cartDTO->cart->pharmacy_id;
+            }
+
+            $quantityMax = $this->getQuantity($productId, $pharmacyIdBySelf);
+
+            if ($cartDTO->quantity > $quantityMax) {
+                throw new UnprocessableEntityHttpException('Больше нет в наличии');
+            }
+
+            $lockedCart = Cart::where('id', $cart->id)->lockForUpdate()->first();
+
+            if ($cartDTO->quantity <= 0) {
+                $lockedCart->products()->detach($productId);
             } else {
-                $cartDTO->cart->products()->updateExistingPivot(
-                    $cartDTO->product_id,
-                    $quantityArr
-                );
+                $lockedCart->products()->syncWithoutDetaching([
+                    $productId => ['quantity' => $cartDTO->quantity]
+                ]);
             }
-        } else {
-            if($cartDTO->quantity >0) {
-                $cartDTO->cart->products()->attach(
-                    $cartDTO->product_id,
-                    $quantityArr
-                );
-            }
-        }
+
+        });
     }
 
     public function addMultipleToCart(User $user, array $products): void
@@ -182,8 +185,8 @@ class CartService
         );
 
         $pharmDto = new CartPharmaciesDTO(
-            geoLat: 53.9,
-            geoLong: 27.5667,
+            geoLat: ($cart->geo_lat > 0) ? $cart->geo_lat : self::MINSK_CENTER_LAT,
+            geoLong: ($cart->geo_long > 0) ? $cart->geo_long : self::MINSK_CENTER_LONG,
             products: $itemsDto,
         );
 
@@ -205,7 +208,7 @@ class CartService
         return $data;
     }
 
-    public function getProductByPharmacies(CartPharmaciesDTO $dto)
+    public function getProductByPharmacies(CartPharmaciesDTO $dto, bool $withoutDelivery = false)
     {
         $userId = auth()->user()->id;
         $record = CartProductPharmacyView::query()
@@ -256,7 +259,9 @@ class CartService
 
             foreach ($entry['pharmacies'] as $ph) {
                 $phId = $ph['pharmacy_id'];
-                if ($phId === PharmaciesView::PHARMACY_ID_FOR_DELIVERY) {
+
+                if (
+                    $phId === PharmaciesView::PHARMACY_ID_FOR_DELIVERY && $withoutDelivery) {
                     continue;
                 }
 
@@ -389,11 +394,10 @@ class CartService
             ->get(['stock_count']);
         $offers = $offers->sortBy('stock_count', SORT_NATURAL);
 
-        if ($offers->count() === 0) {
-            return 0;
+        if (count($offers) > 0) {
+            return (float) $offers->last()->stock_count;
         }
-
-        return (float) $offers->last()->stock_count;
+        return 0;
     }
 
     public function getPriorityPharmacy(CartPharmaciesDTO $dto)
