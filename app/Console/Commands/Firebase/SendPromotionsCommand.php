@@ -6,6 +6,7 @@ namespace App\Console\Commands\Firebase;
 use App\Models\ActionView;
 use App\Console\Commands\Firebase\FirebaseCommand;
 use App\Jobs\Firebase\SendPromotionsJob;
+use Illuminate\Support\Facades\Cache;
 
 
 class SendPromotionsCommand extends FirebaseCommand
@@ -22,16 +23,25 @@ class SendPromotionsCommand extends FirebaseCommand
   
     public function handle()
     { 
-        $promotion = ActionView::where('create_dttm','>=', now()->subDays(self::LIMIT_DAYS))
+        $promotion = ActionView::where('pub_date','>=', now()->subDays(self::LIMIT_DAYS))
         ->where('published', 1)
         ->inRandomOrder()
-        ->get(['pagetitle', 'published'])
+        ->get(['pagetitle', 'published', 'create_dttm', 'pub_date', 'action_id'])
         ->first();
-
+        
         if ($promotion) {
-            $message = $promotion->pagetitle ?? self::DEFAULT_MSG;
-            $job = new SendPromotionsJob(self::TITLE_MSG, $message);
-            dispatch($job);
+            $pubDate = null;
+            if (!Cache::has('action'.$promotion->action_id)) {
+                Cache::put('action'.$promotion->action_id, $promotion->pub_date, 30 * 24 * 60);
+            } else {
+                $pubDate = Cache::get('action'.$promotion->action_id);
+            }
+           
+            if ($pubDate !== $promotion->pub_date) {
+                $message = $promotion->pagetitle ?? self::DEFAULT_MSG;
+                $job = new SendPromotionsJob(self::TITLE_MSG, $message);
+                dispatch($job);
+            }
         }
        
         $this->info("Sent pomotions.");

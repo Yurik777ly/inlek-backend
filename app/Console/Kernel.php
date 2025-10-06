@@ -19,8 +19,8 @@ class Kernel extends ConsoleKernel
     protected function schedule(Schedule $schedule): void
     {
          $schedule->command(CheckForgottenCartCommand::class)->weekly();
-         $schedule->command(SendNewsCommand::class)->daily();
-         $schedule->command(SendPromotionsCommand::class)->daily();
+         $schedule->command(SendNewsCommand::class)->everyFiveMinutes();
+         $schedule->command(SendPromotionsCommand::class)->everyFiveMinutes();
          $schedule->command(RememberFailedRegistationCommand::class)->daily();
          $schedule->command(NotifyUserProductCommand::class)->hourly();
          $schedule->command(CheckUpdatedOrderStatusCommand::class)->everyThreeMinutes();
