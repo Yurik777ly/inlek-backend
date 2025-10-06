@@ -200,7 +200,7 @@ class CartService
             $data['pharmacy_address'] = null;
             $data['pharmacy_availability'] = 'absent';
         }
-
+        $data['cart']['pharmacy']['distance_meter'] = 0;
         return $data;
     }
 
@@ -268,7 +268,7 @@ class CartService
                         'address'          => $ph['address'] ?? null,
                         'coordinates'      => $ph['coordinates'] ?? null,
                         'schedule'         => $ph['schedule'] ?? null,
-                        'distance_meters'  => $ph['distance_meters'] ?? 0,
+                        'distance_meters'  => $ph['distance_meters'] ?? null,
                         'products'         => [],
                         'total_products'   => 0,
                         'total_price'      => 0.0,
@@ -530,6 +530,7 @@ class CartService
                 'pharmacy_id' => $item->pharmacy_id,
                 'address' => $item->address,
                 'products' => $products[$item->pharmacy_id],
+                'distance_meter' => 0
             ];
         }
 
@@ -543,6 +544,7 @@ class CartService
                         'stock_count' => 0.0,
                         'availability' => 'absent',
                         "pharmacy_id" => $key,
+                        'distance_meter2' => 0
                     ];
                 }
             }
