@@ -151,7 +151,7 @@ class CartService
         }
     }
 
-    public function getCartDetailed(CartDetailedDTO $cartDTO)
+    public function getCartDetailed(CartDetailedDTO $cartDTO): array
     {
         $cart = $this->Cart->query()->where('user_id', auth()->user()->id)->first();
         $cart->pharmacy_id = $cartDTO->pharmacyId;
@@ -204,7 +204,7 @@ class CartService
         return $data;
     }
 
-    public function getProductByPharmacies(CartPharmaciesDTO $dto, bool $withoutDelivery = false)
+    public function getProductByPharmacies(CartPharmaciesDTO $dto, bool $withoutDelivery = false): array
     {
         $userId = auth()->user()->id;
         $record = CartProductPharmacyView::query()
@@ -268,7 +268,7 @@ class CartService
                         'address'          => $ph['address'] ?? null,
                         'coordinates'      => $ph['coordinates'] ?? null,
                         'schedule'         => $ph['schedule'] ?? null,
-                        'distance_meters'  => $ph['distance_meters'] ?? null,
+                        'distance_meters'  => $ph['distance_meters'] ?? 0,
                         'products'         => [],
                         'total_products'   => 0,
                         'total_price'      => 0.0,
@@ -406,15 +406,15 @@ class CartService
         $data =$this->getCart();
 
         if (!$data) {
-             return []; 
+             return [];
         }
 
         $data = $this->formatCartData($data);
-       
+
         $data['pharmacy_name'] = 'Аптека не выбрана';
         $data['pharmacy_address'] = 'Аптека не выбрана';
         $data['pharmacy_availability'] = 'full';
-        
+
         return $data;
     }
 
