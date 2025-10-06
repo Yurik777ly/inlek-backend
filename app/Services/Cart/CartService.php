@@ -200,7 +200,7 @@ class CartService
             $data['pharmacy_address'] = null;
             $data['pharmacy_availability'] = 'absent';
         }
-        $data['cart']['pharmacy']['distance_meter'] = 0;
+        $data['cart']['pharmacy']['distance_meters'] = 0; //todo: fast fix
         return $data;
     }
 
