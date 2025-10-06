@@ -29,19 +29,23 @@ class CheckUpdatedOrderStatusCommand extends FirebaseCommand
 
             foreach ($updatedOrders as $order) {
                 if($order->user) {
+
                     $notification = OrderStatusNotification::where('status_id', '=', $order->new_status_id)
-                                                           ->get('text')->first()->text;
-                    if ($order->new_status_id == 3) {
-                        $notification = $notification. ' '. now()->addDays(self::AVAITING_DAYS)->format('d.m.Y');
+                                                           ->get('text')->first();
+                    if($notification) {
+                        if ($order->new_status_id == 3) {
+                            $notification = $notification->text. ' '. now()->addDays(self::AVAITING_DAYS)->format('d.m.Y');
+                        } else {
+                            $notification = $notification->text;
+                        }
                         $this->info($notification);
-                    }
-                    $result = $this->firebaseService->sendToDevice(
-                           $order->user->fcm_token,
-                        [
-                            'title' => self::TITLE_MSG,
-                            'body'  => $notification ? $notification : self::DEFAULT_MSG,
-                        ]
-                    );
+                        $result = $this->firebaseService->sendToDevice(
+                            $order->user->fcm_token,
+                                [
+                                    'title' => self::TITLE_MSG,
+                                    'body'  => $notification ? $notification : self::DEFAULT_MSG,
+                                ]
+                            );
                         if ($result['success']) {
                             $order->updated_at = now();
                             $order->save();
@@ -49,7 +53,10 @@ class CheckUpdatedOrderStatusCommand extends FirebaseCommand
                         } else {
                             $this->info('Error for number '. $order->user->phone .' ' . $result['error']); 
                         }
+                    }
+
                 }
+        
             }
             
         }

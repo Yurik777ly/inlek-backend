@@ -23,7 +23,6 @@ WITH RECURSIVE
                  JOIN evo_offers eod ON cesc.evo_site_content_id = eod.product_id
             AND eod.pharmacy_id = c.pharmacy_id
     ),
-
     -- Рекурсивно разбиваем строку промокодов
     split_promocodes AS (
         SELECT
@@ -179,7 +178,6 @@ WITH RECURSIVE
         FROM product_prices pp
         GROUP BY pp.cart_id
     )
-
 SELECT
     pp.user_id,
     pp.pharmacy_id,
@@ -213,74 +211,86 @@ SELECT
                       ),
             'products', (
                 SELECT IFNULL(JSON_ARRAYAGG(
-                                      JSON_OBJECT(
-                                              'product_id', pp2.product_id,
-                                              'quantity', pp2.quantity,
-                                              'stock_count', eppv2.stock_count * 1,
-                                              'availability', IF(eppv2.stock_count >= cesc2.quantity, 'full', 'part'),
-                                              'product_info', (
-                                                  SELECT JSON_OBJECT(
-                                                                 'pagetitle', epv.pagetitle,
-                                                                 'parent', epv.parent,
-                                                                 'product_description', epv.product_description,
-                                                                 'instruction', epv.instruction,
-                                                                 'mnn', epv.mnn,
-                                                                 'mnn_lat', epv.mnn_lat,
-                                                                 'code', epv.code,
-                                                                 'brand', epv.brand,
-                                                                 'country', epv.country,
-                                                                 'form', epv.form,
-                                                                 'release_form', epv.release_form,
-                                                                 'termin', epv.termin,
-                                                                 'temperature', epv.temperature,
-                                                                 'image', epv.image,
-                                                                 'dose', epv.dose,
-                                                                 'recipe', epv.recipe,
-                                                                 'is_recipe', epv.is_recipe,
-                                                                 'is_alcohol', epv.is_alcohol,
-                                                                 'product_insert', epv.product_insert,
-                                                                 'product_time_register', epv.product_time_register,
-                                                                 'product_register', epv.product_register,
-                                                                 'product_date_register', epv.product_date_register,
-                                                                 'product_trademark', epv.product_trademark,
-                                                                 'product_price_from', epv.product_price_from,
-                                                                 'product_price_from_old', epv.product_price_from_old,
-                                                                 'product_price_from_percent', epv.product_price_from_percent,
-                                                                 'product_sticker', epv.product_sticker,
-                                                                 'delivery', epv.delivery,
-                                                                 'other_pharmacy', (select 1 as available FROM evo_offers WHERE epv.pharmacy_id <> evo_offers.pharmacy_id AND evo_offers.pharmacy_id <> 17599997 and pp2.product_id = evo_offers.product_id GROUP BY evo_offers.product_id)
-                                                         )
-                                                  FROM evo_products_view epv
-                                                  WHERE epv.product_id = pp2.product_id
-                                                  LIMIT 1
-                                              ),
-                                              'prices', JSON_OBJECT(
-                                                      'price', pp2.price,
-                                                      'price_old', pp2.price_old,
-                                                      'final_price', LEAST(pp2.price, COALESCE(pp2.final_price_with_promos, pp2.price)),
-                                                      'final_price_with_promos', COALESCE(pp2.final_price_with_promos, pp2.price),
-                                                      'discount_without_promos', pp2.discount_without_promos,
-                                                      'discount_with_promos', pp2.discount_with_promos,
-                                                      'discount_only_promos', pp2.discount_with_promos - pp2.discount_without_promos,
-                                                      'applied_promocodes', pp2.applied_promocodes_json
-                                                        ),
-                                              'product_totals', JSON_OBJECT(
-                                                      'total', pp2.price * pp2.quantity,
-                                                      'total_old', pp2.price_old * pp2.quantity,
-                                                      'final_total', LEAST(pp2.price, COALESCE(pp2.final_price_with_promos, pp2.price)) * pp2.quantity,
-                                                      'final_total_with_promos', COALESCE(pp2.final_price_with_promos, pp2.price) * pp2.quantity,
-                                                      'total_discount_without_promos', pp2.discount_without_promos * pp2.quantity,
-                                                      'total_discount_with_promos', pp2.discount_with_promos * pp2.quantity,
-                                                      'total_discount_only_promos', (pp2.discount_with_promos - pp2.discount_without_promos) * pp2.quantity
-                                                                ),
-                                              'action_json', (SELECT IFNULL(action_json, JSON_OBJECT()) FROM evo_product_action_view_json WHERE product_id = pp2.product_id LIMIT 1)
-                                      )
-                              ), JSON_ARRAY())
-                FROM product_prices pp2
-                         inner join evo_product_pharmacy_view eppv2 on (pp2.product_id = eppv2.product_id and pp2.pharmacy_id = eppv2.pharmacy_id)
-                         inner join cart_evo_site_content cesc2 on (eppv2.product_id = cesc2.evo_site_content_id)
-                         inner join carts c2 on (cesc2.cart_id = c2.id and pp2.user_id = c2.user_id)
-                WHERE pp2.cart_id = pp.cart_id
+                    JSON_OBJECT(
+                        'product_id', grouped_products.product_id,
+                        'quantity', grouped_products.quantity,
+                        'stock_count', grouped_products.stock_count,
+                        'availability', grouped_products.availability,
+                        'product_info', grouped_products.product_info,
+                        'prices', grouped_products.prices,
+                        'product_totals', grouped_products.product_totals,
+                        'action_json', grouped_products.action_json
+                    )
+                ), JSON_ARRAY())
+                FROM (
+                    SELECT 
+                        pp2.product_id,
+                        MAX(pp2.quantity) as quantity,
+                        MAX(eppv2.stock_count) as stock_count,
+                        IF(MAX(eppv2.stock_count) >= MAX(cesc2.quantity), 'full', 'part') as availability,
+                        (
+                            SELECT JSON_OBJECT(
+                                'pagetitle', epv.pagetitle,
+                                'parent', epv.parent,
+                                'product_description', epv.product_description,
+                                'instruction', epv.instruction,
+                                'mnn', epv.mnn,
+                                'mnn_lat', epv.mnn_lat,
+                                'code', epv.code,
+                                'brand', epv.brand,
+                                'country', epv.country,
+                                'form', epv.form,
+                                'release_form', epv.release_form,
+                                'termin', epv.termin,
+                                'temperature', epv.temperature,
+                                'image', epv.image,
+                                'dose', epv.dose,
+                                'recipe', epv.recipe,
+                                'is_recipe', epv.is_recipe,
+                                'is_alcohol', epv.is_alcohol,
+                                'product_insert', epv.product_insert,
+                                'product_time_register', epv.product_time_register,
+                                'product_register', epv.product_register,
+                                'product_date_register', epv.product_date_register,
+                                'product_trademark', epv.product_trademark,
+                                'product_price_from', epv.product_price_from,
+                                'product_price_from_old', epv.product_price_from_old,
+                                'product_price_from_percent', epv.product_price_from_percent,
+                                'product_sticker', epv.product_sticker,
+                                'delivery', epv.delivery,
+                                'other_pharmacy', (SELECT 1 as available FROM evo_offers WHERE epv.pharmacy_id <> evo_offers.pharmacy_id AND evo_offers.pharmacy_id <> 17599997 and pp2.product_id = evo_offers.product_id GROUP BY evo_offers.product_id)
+                            )
+                            FROM evo_products_view epv
+                            WHERE epv.product_id = pp2.product_id
+                            LIMIT 1
+                        ) as product_info,
+                        JSON_OBJECT(
+                            'price', MAX(pp2.price),
+                            'price_old', MAX(pp2.price_old),
+                            'final_price', LEAST(MAX(pp2.price), COALESCE(MAX(pp2.final_price_with_promos), MAX(pp2.price))),
+                            'final_price_with_promos', COALESCE(MAX(pp2.final_price_with_promos), MAX(pp2.price)),
+                            'discount_without_promos', MAX(pp2.discount_without_promos),
+                            'discount_with_promos', MAX(pp2.discount_with_promos),
+                            'discount_only_promos', MAX(pp2.discount_with_promos) - MAX(pp2.discount_without_promos),
+                            'applied_promocodes', MAX(pp2.applied_promocodes_json)
+                        ) as prices,
+                        JSON_OBJECT(
+                            'total', MAX(pp2.price) * MAX(pp2.quantity),
+                            'total_old', MAX(pp2.price_old) * MAX(pp2.quantity),
+                            'final_total', LEAST(MAX(pp2.price), COALESCE(MAX(pp2.final_price_with_promos), MAX(pp2.price))) * MAX(pp2.quantity),
+                            'final_total_with_promos', COALESCE(MAX(pp2.final_price_with_promos), MAX(pp2.price)) * MAX(pp2.quantity),
+                            'total_discount_without_promos', MAX(pp2.discount_without_promos) * MAX(pp2.quantity),
+                            'total_discount_with_promos', MAX(pp2.discount_with_promos) * MAX(pp2.quantity),
+                            'total_discount_only_promos', (MAX(pp2.discount_with_promos) - MAX(pp2.discount_without_promos)) * MAX(pp2.quantity)
+                        ) as product_totals,
+                        (SELECT IFNULL(action_json, JSON_OBJECT()) FROM evo_product_action_view_json WHERE product_id = pp2.product_id LIMIT 1) as action_json
+                    FROM product_prices pp2
+                    INNER JOIN evo_product_pharmacy_view eppv2 ON (pp2.product_id = eppv2.product_id and pp2.pharmacy_id = eppv2.pharmacy_id)
+                    INNER JOIN cart_evo_site_content cesc2 ON (eppv2.product_id = cesc2.evo_site_content_id)
+                    INNER JOIN carts c2 ON (cesc2.cart_id = c2.id and pp2.user_id = c2.user_id)
+                    WHERE pp2.cart_id = pp.cart_id
+                    GROUP BY pp2.product_id
+                ) AS grouped_products
             )
     ) AS cart
 FROM product_prices pp
