@@ -153,17 +153,11 @@ class CartService
 
     public function getCartDetailed(CartDetailedDTO $cartDTO)
     {
-        DB::transaction(function () use ($cartDTO) {
-            $cart = $this->Cart->query()
-                ->where('user_id', auth()->user()->id())
-                ->lockForUpdate()
-                ->first();
-
-            $cart->pharmacy_id = $cartDTO->pharmacyId;
-            $cart->promocodes = $cartDTO->promocodes;
-            $cart->delivery_zone = $cartDTO->deliveryZone ?? null;
-            $cart->save();
-        });
+        $cart = $this->Cart->query()->where('user_id', auth()->user()->id)->first();
+        $cart->pharmacy_id = $cartDTO->pharmacyId;
+        $cart->promocodes = $cartDTO->promocodes;
+        $cart->delivery_zone = $cartDTO->deliveryZone ?? null;
+        $cart->save();
 
         $dataModel = $this->CartsDetailed
             ->query()
@@ -404,16 +398,10 @@ class CartService
 
     public function getCartDetailedWithoutChoosenPharm(CartDetailedDTO $cartDTO)
     {
-        DB::transaction(function () use ($cartDTO) {
-            $cart = $this->Cart->query()
-                ->where('user_id', auth()->user()->id())
-                ->lockForUpdate()
-                ->first();
-
-            $cart->promocodes = $cartDTO->promocodes;
-            $cart->delivery_zone = $cartDTO->deliveryZone ?? null;
-            $cart->save();
-        });
+        $cart = $this->Cart->query()->where('user_id', auth()->user()->id)->first();
+        $cart->promocodes = $cartDTO->promocodes;
+        $cart->delivery_zone = $cartDTO->deliveryZone ?? null;
+        $cart->save();
 
         $data =$this->getCart();
 
