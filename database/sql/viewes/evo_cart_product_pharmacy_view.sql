@@ -10,7 +10,7 @@ WITH
     ),
 
     pharmacy_base AS (
-        SELECT
+        SELECT DISTINCT  
             uc.user_id,
             cesc.cart_id,
             cesc.evo_site_content_id AS product_id,
@@ -36,60 +36,60 @@ WITH
                         )
                     )
            END AS distance_meters
-           FROM evo_product_pharmacy_view eppv
-           JOIN cart_evo_site_content cesc ON eppv.product_id = cesc.evo_site_content_id
-           JOIN user_cart_coords uc ON cesc.cart_id = uc.cart_id
-           WHERE eppv.stock_count > 0
+        FROM evo_product_pharmacy_view eppv
+        JOIN cart_evo_site_content cesc ON eppv.product_id = cesc.evo_site_content_id
+        JOIN user_cart_coords uc ON cesc.cart_id = uc.cart_id
+        WHERE eppv.stock_count > 0
     ),
 
-sorted_pharmacies AS (
-    SELECT
-        pb.*,
-        ROW_NUMBER() OVER (
-            PARTITION BY pb.cart_id, pb.product_id
-            ORDER BY pb.distance_meters ASC,
-            CASE pb.availability
-                WHEN 'full' THEN 0
-                WHEN 'part' THEN 1
-                ELSE 2
-            END ASC
-        ) AS pharmacy_rank
-    FROM pharmacy_base pb
-),
+    sorted_pharmacies AS (
+        SELECT
+            pb.*,
+            ROW_NUMBER() OVER (
+                PARTITION BY pb.cart_id, pb.product_id, pb.pharmacy_id  
+                ORDER BY pb.distance_meters ASC,
+                CASE pb.availability
+                    WHEN 'full' THEN 0
+                    WHEN 'part' THEN 1
+                    ELSE 2
+                END ASC
+            ) AS pharmacy_rank
+        FROM pharmacy_base pb
+    ),
 
-                pharmacy_groups AS (
-    SELECT
-        cart_id,
-        user_id,
-        product_id,
-        required_quantity,
-        JSON_ARRAYAGG(
-            JSON_OBJECT(
-                'pharmacy_id', pharmacy_id,
-                'pharmacy_name', pharmacy_name,
-                'coordinates', coordinates,
-                'schedule', schedule,
-                'address', address,
-                'stock_count', stock_count,
-                'availability', availability,
-                'distance_meters', distance_meters,
-                'price', price,
-                'price_old', GREATEST(price_old, price)
-            )
-        ) AS pharmacies
-    FROM sorted_pharmacies
-    GROUP BY cart_id, user_id, product_id, required_quantity
-)
-
+    pharmacy_groups AS (
+        SELECT
+            cart_id,
+            user_id,
+            product_id,
+            required_quantity,
+            JSON_ARRAYAGG(
+                JSON_OBJECT(
+                    'pharmacy_id', pharmacy_id,
+                    'pharmacy_name', pharmacy_name,
+                    'coordinates', coordinates,
+                    'schedule', schedule,
+                    'address', address,
+                    'stock_count', stock_count,
+                    'availability', availability,
+                    'distance_meters', distance_meters,
+                    'price', price,
+                    'price_old', GREATEST(price_old, price)
+                )
+            ) AS pharmacies
+        FROM sorted_pharmacies
+        WHERE pharmacy_rank = 1  
+        GROUP BY cart_id, user_id, product_id, required_quantity
+    )
 SELECT
     pg.cart_id,
     pg.user_id,
     JSON_ARRAYAGG(
-            JSON_OBJECT(
-                    'product_id', pg.product_id,
-                    'required_quantity', pg.required_quantity,
-                    'pharmacies', pg.pharmacies
-            )
+        JSON_OBJECT(
+            'product_id', pg.product_id,
+            'required_quantity', pg.required_quantity,
+            'pharmacies', pg.pharmacies
+        )
     ) AS cart
 FROM pharmacy_groups pg
 GROUP BY pg.cart_id, pg.user_id;
