@@ -14,7 +14,7 @@ class CheckUpdatedOrderStatusCommand extends FirebaseCommand
 
     const TITLE_MSG = 'Inlek. Инфорамция о заказе'; 
     const DEFAULT_MSG = 'Ваш заказ в работе.';
-    const AVAITING_DAYS = 4; 
+    const AVAITING_DAYS = 1; 
 
   
     public function handle()
