@@ -16,11 +16,14 @@ WITH RECURSIVE
             c.delivery_zone,
             cesc.evo_site_content_id AS product_id,
             cesc.quantity,
-            eod.price,
-            CASE WHEN eod.price_old = 0 THEN eod.price ELSE eod.price_old END AS price_old
+            COALESCE(eod.price, 0) AS price,
+            CASE 
+                WHEN COALESCE(eod.price_old, 0) = 0 THEN COALESCE(eod.price, 0) 
+                ELSE COALESCE(eod.price_old, 0) 
+            END AS price_old
         FROM user_cart c
                  JOIN cart_evo_site_content cesc ON c.id = cesc.cart_id
-                 JOIN evo_offers eod ON cesc.evo_site_content_id = eod.product_id
+                 LEFT JOIN evo_offers eod ON cesc.evo_site_content_id = eod.product_id
             AND eod.pharmacy_id = c.pharmacy_id
     ),
     -- Рекурсивно разбиваем строку промокодов
@@ -226,8 +229,8 @@ SELECT
                     SELECT 
                         pp2.product_id,
                         MAX(pp2.quantity) as quantity,
-                        MAX(eppv2.stock_count) as stock_count,
-                        IF(MAX(eppv2.stock_count) >= MAX(cesc2.quantity), 'full', 'part') as availability,
+                        COALESCE(MAX(eppv2.stock_count), 0) as stock_count,
+                        IF(COALESCE(MAX(eppv2.stock_count), 0) >= MAX(cesc2.quantity), 'full', 'part') as availability,
                         (
                             SELECT JSON_OBJECT(
                                 'pagetitle', epv.pagetitle,
@@ -285,9 +288,8 @@ SELECT
                         ) as product_totals,
                         (SELECT IFNULL(action_json, JSON_OBJECT()) FROM evo_product_action_view_json WHERE product_id = pp2.product_id LIMIT 1) as action_json
                     FROM product_prices pp2
-                    INNER JOIN evo_product_pharmacy_view eppv2 ON (pp2.product_id = eppv2.product_id and pp2.pharmacy_id = eppv2.pharmacy_id)
-                    INNER JOIN cart_evo_site_content cesc2 ON (eppv2.product_id = cesc2.evo_site_content_id)
-                    INNER JOIN carts c2 ON (cesc2.cart_id = c2.id and pp2.user_id = c2.user_id)
+                    INNER JOIN cart_evo_site_content cesc2 ON (pp2.product_id = cesc2.evo_site_content_id AND pp2.cart_id = cesc2.cart_id)
+                    LEFT JOIN evo_product_pharmacy_view eppv2 ON (pp2.product_id = eppv2.product_id and pp2.pharmacy_id = eppv2.pharmacy_id)
                     WHERE pp2.cart_id = pp.cart_id
                     GROUP BY pp2.product_id
                 ) AS grouped_products
