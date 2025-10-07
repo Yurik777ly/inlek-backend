@@ -3,6 +3,7 @@
 namespace App\Services\Product;
 
 use App\Http\Dto\Product\ProductDTO;
+use App\Models\EVO\EvoOffers;
 use App\Models\PharmaciesView;
 use App\Models\ProductActionView;
 use App\Models\DailyProductsView;
@@ -114,11 +115,17 @@ class ProductService
     public function getProductDetails(ProductDTO $productDto): ?array
     {
         $product = $this->productInfoViewJsonDetailed->query()->where('product_id', $productDto->productId)
-            ->get(['product_id','product_charachters','action_json','promocodes_json','categories_json', 'brand_products', 'similar_products', 'related_products', 'category_products', 'instruction'])->first();
+            ->get(['product_id','product_charachters','action_json','promocodes_json','categories_json', 'brand_products', 'related_products', 'category_products', 'instruction'])->first();
         if ($product) {
             $categories = $product->categories_json;
             $product->similar_products = Rees46::getRecommendation(last($categories)['category_id']);
             $product = $product->toArray();
+
+            $product['availability'] = 'absent';
+            if ($this->getAvailablePharmaciesCount( $productDto->productId) > 0)
+            {
+                $product['availability'] = 'part';
+            }        
         }
         return $product;
     }
@@ -277,5 +284,10 @@ class ProductService
         $c = 2 * atan2(sqrt($a), sqrt(1 - $a));
 
         return $earthRadius * $c;
+    }
+
+    private function getAvailablePharmaciesCount($productId):int 
+    {
+        return EvoOffers::where('product_id', $productId)->count();
     }
 }
