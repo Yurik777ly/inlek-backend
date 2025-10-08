@@ -215,8 +215,7 @@ class ProductService
                 '=',
                 'evo_product_info_view_json_opt_noact.product_id'
             )
-            ->where('evo_product_pharmacy_json.product_id', $productDto->productId)
-            ->where('evo_product_pharmacy_json.pharmacy_id', '<>', PharmaciesView::PHARMACY_ID_FOR_DELIVERY);
+            ->where('evo_product_pharmacy_json.product_id', $productDto->productId);
 
         $query->when(!empty($productDto->pharmacyId), function($q) use($productDto) {
             return $q->where('pharmacy_id', $productDto->pharmacyId);
@@ -236,6 +235,7 @@ class ProductService
         });
 
         $items = $query->get();
+     
 
         if (empty($productDto->geoLat) || empty($productDto->geoLong)) {
             return $items;
