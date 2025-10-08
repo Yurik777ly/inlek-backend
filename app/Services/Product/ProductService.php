@@ -208,6 +208,7 @@ class ProductService
                 'evo_product_pharmacy_json.pharmacy_id',
                 'evo_product_pharmacy_json.pharmacy_delivery'
             ])
+            ->distinct()
             ->join(
                 'evo_product_info_view_json_opt_noact',
                 'evo_product_pharmacy_json.product_id',
