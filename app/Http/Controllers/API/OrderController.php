@@ -83,6 +83,8 @@ class OrderController extends Controller
         if (!$order->isEmpty()) {
             $orderData = $order->first();
             $orderArray = $orderData->toArray();
+            $processor = $this->OrderService->createPaymentProcess($orderArray);
+           
 
             $fields = null;
             if (isset($orderArray['fields']) && is_string($orderArray['fields'])) {
@@ -124,6 +126,10 @@ class OrderController extends Controller
                 'payment_info' => [
                     'method' => $fields['payment_method'] ?? ($orderData->payment_method ?? null),
                     'method_title' => $fields['payment_method_title'] ?? ($orderData->payment_method_title ?? null),
+                    'payment_link' => $processor !== null ? $processor->getPaymentLink(
+                        EvoCommerceOrders::find($orderId),
+                        EvoCommerceOrderPayments::where('order_id', $orderId)->first()
+                    ) : null
                 ],
                 'additional' => [
                     'comment' => $orderData->comment ?? '',

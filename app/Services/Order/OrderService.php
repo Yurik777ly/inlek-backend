@@ -48,6 +48,7 @@ const SELF_GET_TITLES = [
 
 class OrderService
 {
+    const AWAITING_PAY_STATUS = 10;
     private array $productCache = [];
 
     public function __construct(
@@ -150,15 +151,12 @@ class OrderService
 
                 // Создаем запись в истории
                 $this->createOrderHistory($orderId);
-
-                // Обрабатываем платеж
-                $processor = $this->processOrderPayment($orderId, $orderCalculations['totalSum'], $orderArray['payment']);
-
+                
                 // Обновляем статус заказа
                 $this->updateOrderStatus($orderId, 2);
 
                 // Возвращаем ответ
-                return $this->formatOrderResponse($orderId, $orderArray, $orderCalculations, $processor, $cartData['orderProducts']);
+                return $this->formatOrderResponse($orderId, $orderArray, $orderCalculations,  $cartData['orderProducts']);
             });
     }
 
@@ -497,6 +495,20 @@ class OrderService
         };
     }
 
+    public function createPaymentProcess(array $order) {
+        $statusId = $order['status_id'];
+        $paymentMethod = $order['payment_method'];
+        $isPaid = $order['is_paid'];
+        if (
+            $statusId == self::AWAITING_PAY_STATUS &&
+            $paymentMethod !== 'cash' &&
+            $isPaid === null
+        ) {
+            return $this->processOrderPayment($order['order_id'], $order['total_sum'], $paymentMethod);
+        }
+        return null;
+    }
+
     private function updateOrderStatus(int $orderId, int $statusId): void
     {
         $order = EvoCommerceOrders::find($orderId);
@@ -506,7 +518,7 @@ class OrderService
         }
     }
 
-    private function formatOrderResponse(int $orderId, array $orderArray, array $calculations, ?object $processor, array $orderProducts = []): array
+    private function formatOrderResponse(int $orderId, array $orderArray, array $calculations, array $orderProducts = []): array
     {
         // Получаем информацию об аптеке
         $pharmacyData = $this->PharmacyService->getPharmacyById($orderArray['pharmacy_id']);
@@ -592,10 +604,7 @@ class OrderService
                 'has_discount' => $orderData->has_discount,
                 'has_promocodes' => $orderData->has_promocodes,
                 'promocodes' => $orderData->promocodes,
-                'payment_link' => $processor ? $processor->getPaymentLink(
-                    EvoCommerceOrders::find($orderId),
-                    EvoCommerceOrderPayments::where('order_id', $orderId)->first()
-                ) : null
+                'payment_link' => null
             ]
         ];
     }
