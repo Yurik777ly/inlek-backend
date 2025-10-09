@@ -125,7 +125,7 @@ class ProductService
             if ($this->getAvailablePharmaciesCount( $productDto->productId) > 0)
             {
                 $product['availability'] = 'part';
-            }        
+            }
         }
         return $product;
     }
@@ -141,7 +141,7 @@ class ProductService
     {
         $priceFilter =
             $this->ProductInfoViewJsonFilter->query()
-            ->select(['evo_product_info_view_json_opt.product_id', 'product_charachters', 'action_json', 'promocodes_json'])
+            ->select(['evo_product_info_view_json_opt.product_id', 'product_charachters', 'action_json', 'promocodes_json', 'is_available'])
             ->where('product_price_from', '>=', $productDto->priceFrom)
             ->where('product_price_from', '<=', $productDto->priceTo)
             ->when(!empty($productDto->releaseForm), function($query) use($productDto) {
@@ -235,7 +235,7 @@ class ProductService
         });
 
         $items = $query->get();
-     
+
 
         if (empty($productDto->geoLat) || empty($productDto->geoLong)) {
             return $items;
@@ -287,7 +287,7 @@ class ProductService
         return $earthRadius * $c;
     }
 
-    private function getAvailablePharmaciesCount($productId):int 
+    private function getAvailablePharmaciesCount($productId):int
     {
         return EvoOffers::where('product_id', $productId)->count();
     }
