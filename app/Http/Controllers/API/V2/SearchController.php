@@ -43,10 +43,9 @@ class SearchController extends Controller
 
         $data = $response->json();
 
-        $productIds = collect($data['products'] ?? [])->pluck('id')->all();
+        $productIds = array_column($data['products'], 'id');
 
-        $extraData = ProductInfoViewJsonFilter::query()
-            ->whereIn('product_id', $productIds)
+        $extraData = ProductInfoViewJsonFilter::whereIn('product_id', $productIds)
             ->select([
                 'product_id',
                 'product_charachters',
@@ -79,7 +78,11 @@ class SearchController extends Controller
                 return $data;
             });
 
-        $data['products'] = collect($data['products'])->map(function ($product) use ($extraData) {
+        $data['products'] = collect($data['products'])
+        ->filter(function ($product) use ($extraData) {
+            return $extraData->has($product['id']);
+        })
+        ->map(function ($product) use ($extraData) {
             $productId = $product['id'];
 
             if ($extraData->has($productId)) {
