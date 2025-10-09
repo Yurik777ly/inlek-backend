@@ -8,6 +8,8 @@ use App\Services\Order\OrderService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
+use App\Models\EVO\EvoCommerceOrders;
+use App\Models\EVO\EvoCommerceOrderPayments;
 
 class OrderController extends Controller
 {
