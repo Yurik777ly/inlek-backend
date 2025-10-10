@@ -132,7 +132,7 @@ class ProductService
 
     public function getDailyProducts(): array
     {
-        $daily = $this->DailyProductsView::with('productInfo:product_id,product_charachters,action_json,promocodes_json,categories_json', 'is_available')
+        $daily = $this->DailyProductsView::with('productInfo:product_id,product_charachters,action_json,promocodes_json,categories_json,is_available')
             ->get(['product_id'])->toArray();
         return $daily;
     }
@@ -203,6 +203,7 @@ class ProductService
                 'evo_product_pharmacy_json.product_id',
                 'evo_product_info_view_json_opt_noact.is_recipe',
                 'evo_product_info_view_json_opt_noact.is_alcohol',
+                'evo_product_info_view_json_opt_noact.is_available',
                 'evo_product_pharmacy_json.product_pharmacy_json',
                 'evo_product_pharmacy_json.coordinates',
                 'evo_product_pharmacy_json.pharmacy_id',
