@@ -15,7 +15,9 @@ WITH RECURSIVE
             c.updated_at AS cart_updated_at,
             c.delivery_zone,
             cesc.evo_site_content_id AS product_id,
-            cesc.quantity,
+            cesc.quantity AS requested_quantity, -- Сохраняем исходное количество из корзины
+            -- quantity не может быть больше stock_count
+            LEAST(cesc.quantity, COALESCE(eppv.stock_count, 0)) AS quantity,
             COALESCE(eod.price, 0) AS price,
             CASE 
                 WHEN COALESCE(eod.price_old, 0) = 0 THEN COALESCE(eod.price, 0) 
@@ -71,7 +73,8 @@ WITH RECURSIVE
         WHERE ep.begin < NOW()
           AND NOW() < ep.end
           AND ep.active = 1
-          AND ci.quantity >= ep.min_amount
+          -- Используем requested_quantity для проверки минимального количества
+          AND ci.requested_quantity >= ep.min_amount
     ),
 
     applied_promocodes AS (
@@ -100,9 +103,10 @@ WITH RECURSIVE
             ci.price,
             ci.price_old,
             ci.stock_count,
+            ci.requested_quantity,
             CASE 
                 WHEN ci.stock_count = 0 THEN 'absent'
-                WHEN ci.stock_count >= ci.quantity THEN 'full'
+                WHEN ci.stock_count >= ci.requested_quantity THEN 'full' -- используем requested_quantity для проверки доступности
                 ELSE 'part'
             END AS availability,
             GREATEST(ci.price_old, ci.price) AS max_price,
@@ -227,6 +231,7 @@ SELECT
                         'product_id', grouped_products.product_id,
                         'quantity', grouped_products.quantity,
                         'stock_count', grouped_products.stock_count,
+                        'requested_quantity', grouped_products.requested_quantity,
                         'availability', grouped_products.availability,
                         'product_info', grouped_products.product_info,
                         'prices', grouped_products.prices,
@@ -239,6 +244,7 @@ SELECT
                         pp2.product_id,
                         MAX(pp2.quantity) as quantity,
                         MAX(pp2.stock_count) as stock_count,
+                        MAX(pp2.requested_quantity) as requested_quantity,
                         MAX(pp2.availability) as availability,
                         (
                             SELECT JSON_OBJECT(

@@ -147,7 +147,7 @@ class OrderService
                 $this->saveOrderProducts($orderId, $cartData['orderProducts'], $orderArray['pharmacy_id']);
 
                 // Очищаем корзину
-                $this->clearCartProducts(array_column($cartData['orderProducts'], 'product_id'));
+                 $this->clearCartProductsV2($cartData['orderProducts']);
 
                 // Создаем запись в истории
                 $this->createOrderHistory($orderId);
@@ -225,7 +225,8 @@ class OrderService
                     'product_id' => $product['product_id'],
                     'title' => $product['product_info']['pagetitle'],
                     'price' => $price,
-                    'count' => $quantity,
+                    'count' => (int)$quantity,
+                    'requested_quantity' => (int)$product['requested_quantity'],
                     'options' => json_encode([
                         "pharmacy_id" => $orderArray['pharmacy_id'],
                         "iscancellations" => false,
@@ -464,6 +465,25 @@ class OrderService
         }
     }
 
+        
+    private function clearCartProductsV2(array $products): void
+    {
+        $productIds = [];
+        if (!empty($products)) {
+            foreach ($products as $product) {
+                if ($product['count'] == $product['requested_quantity']) {
+                    $productIds[] = $product['product_id'];
+                }
+                else {
+                    auth()->user()->cart->products()->syncWithoutDetaching([
+                        $product['product_id'] => ['quantity' => $product['requested_quantity'] - $product['count']]
+                    ]);
+                }
+            }
+        }
+        $this->clearCartProducts($productIds);
+    }
+
     private function createOrderHistory(int $orderId): void
     {
         $history = new EvoCommerceOrderHistory();
@@ -499,12 +519,13 @@ class OrderService
         $statusId = $order['status_id'];
         $paymentMethod = $order['payment_method'];
         $isPaid = $order['is_paid'];
+        $totalSum = round((float)$order['total_sum'], 2);
         if (
             $statusId == self::AWAITING_PAY_STATUS &&
             $paymentMethod !== 'cash' &&
             $isPaid === null
         ) {
-            return $this->processOrderPayment($order['order_id'], $order['total_sum'], $paymentMethod);
+            return $this->processOrderPayment($order['order_id'], $totalSum, $paymentMethod);
         }
         return null;
     }
