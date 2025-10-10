@@ -106,8 +106,7 @@ WITH RECURSIVE
             ci.requested_quantity,
             CASE 
                 WHEN ci.stock_count = 0 THEN 'absent'
-                WHEN ci.stock_count >= ci.requested_quantity THEN 'full' -- используем requested_quantity для проверки доступности
-                ELSE 'part'
+                ELSE 'full'
             END AS availability,
             GREATEST(ci.price_old, ci.price) AS max_price,
             -- Цена с промокодами
