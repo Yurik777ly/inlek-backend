@@ -454,6 +454,7 @@ class CartService
                         'price_old' => round($product['product_charachters']['product_price_from'], 2),
                     ],
                     'quantity' => $product['quantity'],
+                    'requested_quantity' => $product['quantity'],
                     'product_id' => $product['product_charachters']['product_id'],
                     'availability' => 'full',
                     'action_json' => $product['action_json'],
