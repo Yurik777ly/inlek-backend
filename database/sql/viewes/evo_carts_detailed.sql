@@ -17,7 +17,7 @@ WITH RECURSIVE
             cesc.evo_site_content_id AS product_id,
             cesc.quantity AS requested_quantity, -- Сохраняем исходное количество из корзины
             -- quantity не может быть больше stock_count
-            LEAST(cesc.quantity, COALESCE(eppv.stock_count, 0)) AS quantity,
+            CAST(LEAST(cesc.quantity, COALESCE(eppv.stock_count, 0)) AS UNSIGNED) AS quantity,
             COALESCE(eod.price, 0) AS price,
             CASE 
                 WHEN COALESCE(eod.price_old, 0) = 0 THEN COALESCE(eod.price, 0) 
@@ -229,9 +229,9 @@ SELECT
                 SELECT IFNULL(JSON_ARRAYAGG(
                     JSON_OBJECT(
                         'product_id', grouped_products.product_id,
-                        'quantity', grouped_products.quantity,
+                        'quantity', CAST(grouped_products.quantity AS UNSIGNED),
                         'stock_count', grouped_products.stock_count,
-                        'requested_quantity', grouped_products.requested_quantity,
+                        'requested_quantity', CAST(grouped_products.requested_quantity AS UNSIGNED),
                         'availability', grouped_products.availability,
                         'product_info', grouped_products.product_info,
                         'prices', grouped_products.prices,
