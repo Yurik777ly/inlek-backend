@@ -17,6 +17,7 @@ use App\Models\CartProductPharmacyView;
 use App\Models\CartsDetailed;
 use Mockery\Matcher\Any;
 use Symfony\Component\HttpKernel\Exception\UnprocessableEntityHttpException;
+use App\Services\Pharmacy\PharmacyService;
 
 class CartService
 {
@@ -29,6 +30,7 @@ class CartService
         protected readonly CartsDetailed $CartsDetailed,
         protected readonly CartProductPharmacyView $CartProductPharmacyView,
         protected readonly EvoOffers $evoOffers,
+        protected readonly PharmacyService $pharmacyService,
     ) {}
 
     public function addToCart(CartDTO $cartDTO)
@@ -196,8 +198,10 @@ class CartService
             $data['pharmacy_address'] = $selected['address'];
             $data['pharmacy_availability'] = $selected['availability'];
         } else {
-            $data['pharmacy_name'] = null;
-            $data['pharmacy_address'] = null;
+            $pharmacyData = $this->pharmacyService->getPharmacyById($cartDTO->pharmacyId);
+            $pharmacy = $pharmacyData->first();
+            $data['pharmacy_name'] = $pharmacy->pagetitle ?? null;
+            $data['pharmacy_address'] = $pharmacy->address ?? null;
             $data['pharmacy_availability'] = 'absent';
         }
         $data['cart']['pharmacy']['distance_meters'] = 0; //todo: fast fix
@@ -274,6 +278,7 @@ class CartService
                         'total_price'      => 0.0,
                         'total_price_old'  => 0.0,
                         'total_discount'   => 0.0,
+                        'sum_availability' => '0/0',
                     ];
                 }
 
@@ -326,6 +331,20 @@ class CartService
         unset($ph);
 
         foreach ($pharmacies as &$ph) {
+            $totalAvailable = 0;
+            $totalRequested = 0;
+        
+            foreach ($ph['products'] as $product) {
+                $requestedQty = $product['requested_quantity'];
+                $stockCount = $product['stock_count'];
+        
+                $available = min($requestedQty, $stockCount);
+                $totalAvailable += $available;
+                $totalRequested += $requestedQty;
+            }
+        
+            $ph['sum_availability'] = $totalAvailable . '/' . $totalRequested;
+
             $productAvailabilities = array_column($ph['products'], 'availability');
             $unique = array_values(array_unique($productAvailabilities));
 
