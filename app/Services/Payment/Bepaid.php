@@ -19,8 +19,9 @@ class Bepaid extends Payment
 
     public function getPaymentLink($order='', $payment='')
     {
-        $payment->amount = round($payment->amount * 100, 2);
-        $payment->amount = (int) $payment->amount;
+        $paymentForBepaid = (int)round($payment->amount * 100, 2);
+        $payment->amount = round((float)$payment->amount, 2);
+        
 
         $customer = [
             'email' => $order->email,
@@ -44,7 +45,7 @@ class Bepaid extends Payment
                 ],
                 'order' => [
                     'currency' => 'BYN',
-                    'amount' => $payment->amount,
+                    'amount' => $paymentForBepaid,
                     'description' => 'Оплата заказа ' . $order->id,
                     'tracking_id' => $order->id . '-' . $payment->hash
                 ],
