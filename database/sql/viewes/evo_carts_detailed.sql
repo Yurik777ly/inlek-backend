@@ -17,13 +17,13 @@ WITH RECURSIVE
             cesc.evo_site_content_id AS product_id,
             cesc.quantity AS requested_quantity, -- Сохраняем исходное количество из корзины
             -- quantity не может быть больше stock_count
-            CAST(LEAST(cesc.quantity, COALESCE(eppv.stock_count, 0)) AS UNSIGNED) AS quantity,
+            CAST(LEAST(cesc.quantity, CAST(COALESCE(eppv.stock_count, '0') AS UNSIGNED)) AS UNSIGNED) AS quantity,
             COALESCE(eod.price, 0) AS price,
             CASE 
                 WHEN COALESCE(eod.price_old, 0) = 0 THEN COALESCE(eod.price, 0) 
                 ELSE COALESCE(eod.price_old, 0) 
             END AS price_old,
-            COALESCE(eppv.stock_count, 0) AS stock_count
+            CAST(COALESCE(eppv.stock_count, '0') AS UNSIGNED) AS stock_count
         FROM user_cart c
                  JOIN cart_evo_site_content cesc ON c.id = cesc.cart_id
                  LEFT JOIN evo_offers eod ON cesc.evo_site_content_id = eod.product_id
