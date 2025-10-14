@@ -3,11 +3,10 @@
 namespace App\Console\Commands\Firebase;
 
 
-use App\Models\ActionView;
+use App\Models\ActionNotification;
 use App\Console\Commands\Firebase\FirebaseCommand;
 use App\Jobs\Firebase\SendPromotionsJob;
-use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\DB;
 
 
 class SendPromotionsCommand extends FirebaseCommand
@@ -24,31 +23,24 @@ class SendPromotionsCommand extends FirebaseCommand
   
     public function handle()
     { 
-        $promotion = ActionView::where('pub_date','>=', now()->subDays(self::LIMIT_DAYS))
-        ->where('published', 1)
-        ->inRandomOrder()
-        ->get(['pagetitle', 'published', 'create_dttm', 'pub_date', 'action_id'])
-        ->first();
-        
-        if ($promotion) {
-            $pubDate = null;
-            if (!Cache::has('action'.$promotion->action_id)) {
-                Cache::put('action'.$promotion->action_id, $promotion->pub_date, 30 * 24 * 60);
-            } else {
-                $pubDate = Cache::get('action'.$promotion->action_id);
-            }
-            Log::build([
-                'driver' => 'single',
-                'path' => storage_path('logs/actions.log'),
-            ])->info('Ключ', ['action_id' => $promotion->action_id, 'pub_date' => $pubDate]);
-           
-            if ($pubDate !== $promotion->pub_date) {
+        $newPromotions = ActionNotification::where('sent', 0)
+        ->with(['action' => function($query) {
+            $query->select('action_id', 'pagetitle', 'pub_date', 'published');
+        }])
+        ->get();
+
+        foreach ($newPromotions as $newPromotion) {
+            $promotion = $newPromotion->action;
+            if ($promotion) {
                 $message = $promotion->pagetitle ?? self::DEFAULT_MSG;
                 $job = new SendPromotionsJob(self::TITLE_MSG, $message);
                 dispatch($job);
             }
         }
-       
+        DB::table('actions_notifications')
+        ->where('sent', 0)
+        ->update(['sent' => 1]);
+
         $this->info("Sent pomotions.");
     }
 }
