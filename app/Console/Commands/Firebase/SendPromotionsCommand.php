@@ -7,6 +7,7 @@ use App\Models\ActionView;
 use App\Console\Commands\Firebase\FirebaseCommand;
 use App\Jobs\Firebase\SendPromotionsJob;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 
 
 class SendPromotionsCommand extends FirebaseCommand
@@ -36,6 +37,10 @@ class SendPromotionsCommand extends FirebaseCommand
             } else {
                 $pubDate = Cache::get('action'.$promotion->action_id);
             }
+            Log::build([
+                'driver' => 'single',
+                'path' => storage_path('logs/actions.log'),
+            ])->info('Ключ', ['action_id' => $promotion->action_id, 'pub_date' => $pubDate]);
            
             if ($pubDate !== $promotion->pub_date) {
                 $message = $promotion->pagetitle ?? self::DEFAULT_MSG;
