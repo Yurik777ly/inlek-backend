@@ -80,7 +80,7 @@ class SearchController extends Controller
 
         $data['products'] = collect($data['products'])
         ->filter(function ($product) use ($extraData) {
-            return $extraData->has($product['id']);
+            return $extraData->has($product['id']) && $extraData[$product['id']]['price'] > 0;
         })
         ->map(function ($product) use ($extraData) {
             $productId = $product['id'];
