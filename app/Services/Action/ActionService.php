@@ -45,7 +45,6 @@ class ActionService
                         'create_dttm_raw',
                         'edited_dttm_raw',
                         'published_dttm_raw',
-                        'content',
                         'menutitle',
                         'pub_date',
                         'published_dttm',
