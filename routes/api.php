@@ -22,6 +22,7 @@ Route::prefix('auth')->group(function () {
 Route::middleware('auth:sanctum')->group(function () {
     Route::prefix('auth')->group(function () {
         Route::get('/test',             [AuthController::class, 'test']);
+        Route::post('/update-fcm-token',[AuthController::class, 'updateFcmToken']);
         Route::post('/logout',          [AuthController::class, 'logout']);
     });
     Route::prefix('profile')->group(function () {

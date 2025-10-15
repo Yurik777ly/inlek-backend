@@ -138,4 +138,13 @@ class AuthService
     {
         return $user->tokens()->delete();
     }
+
+    public function updateFcmToken(string $fcmToken)
+    {
+        $user = auth()->user();
+        if ($user) {
+            $user->fcm_token = $fcmToken;
+            $user->save();
+        }
+    }
 }

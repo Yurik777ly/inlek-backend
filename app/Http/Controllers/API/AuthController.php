@@ -327,4 +327,13 @@ class AuthController extends Controller
         $this->AuthService->logout($request->user());
         return $this->responseOk();
     }
+
+    public function updateFcmToken(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'fcm_token' => ['required', 'string'],
+        ]);
+        $this->AuthService->updateFcmToken($validated['fcm_token']);
+        return $this->responseOk();
+    }
 }
