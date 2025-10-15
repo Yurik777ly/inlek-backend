@@ -266,19 +266,16 @@ class OrderService
         // Правильный расчет скидки по промокодам
         $promocodesDiscount = $this->calculatePromocodesDiscount($cartData['products'], $orderArray['promocodes'] ?? []);
 
-        // Применяем промокод к сумме товаров
-        $discountedSum = max(0, $sum - $promocodesDiscount);
-
         // Рассчитываем доставку с учетом скидки по промокоду
-        $deliverySum = $this->calculateDeliveryPrice($orderArray, $discountedSum);
+        $deliverySum = $this->calculateDeliveryPrice($orderArray, $sum);
 
         // Итоговая сумма
-        $totalSum = $discountedSum + $deliverySum;
+        $totalSum = $sum + $deliverySum;
 
         Log::info('Order totals calculated', [
-            'original_sum' => $sum,
+            'original_sum' => $oldsum,
             'promocodes_discount' => $promocodesDiscount,
-            'discounted_sum' => $discountedSum,
+            'discounted_sum' => $sum,
             'delivery_sum' => $deliverySum,
             'total_sum' => $totalSum
         ]);
