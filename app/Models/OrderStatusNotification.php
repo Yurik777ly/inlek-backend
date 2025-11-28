@@ -6,6 +6,9 @@ use Illuminate\Database\Eloquent\Model;
 
 class OrderStatusNotification extends Model
 {
+
+   public $timestamps = false;
+
    protected $table = "order_status_notifications";
 
    	protected $fillable = [
