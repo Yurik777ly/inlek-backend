@@ -12,7 +12,9 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('sms', function (Blueprint $table) {
-            $table->boolean('is_confirmed')->default(false);
+            if (!Schema::hasColumn('sms', 'is_confirmed')) {
+                $table->boolean('is_confirmed')->default(false);
+            }
         });
     }
 
@@ -22,7 +24,9 @@ return new class extends Migration
     public function down(): void
     {
         Schema::table('sms', function (Blueprint $table) {
-            $table->dropColumn('is_confirmed');
+            if (Schema::hasColumn('sms', 'is_confirmed')) {
+                $table->dropColumn('is_confirmed');
+            }
         });
     }
 };

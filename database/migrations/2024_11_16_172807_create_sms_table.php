@@ -11,15 +11,17 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('sms', function (Blueprint $table) {
-            $table->id();
-            $table->string('phone');
-            $table->timestamp('last_sms_requested_at')->nullable();
-            $table->integer('sms_requested_qty')->default(0);
-            $table->integer('code');
+        if (!Schema::hasTable('sms')) {
+            Schema::create('sms', function (Blueprint $table) {
+                $table->id();
+                $table->string('phone');
+                $table->timestamp('last_sms_requested_at')->nullable();
+                $table->integer('sms_requested_qty')->default(0);
+                $table->integer('code');
 
-            //$table->foreign('phone')->references('phone')->on('users');
-        });
+                //$table->foreign('phone')->references('phone')->on('users');
+            });
+        }
     }
 
     /**

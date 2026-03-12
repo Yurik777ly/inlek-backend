@@ -12,9 +12,15 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('users', function (Blueprint $table) {
-            $table->string('checkboxes')->nullable();
-            $table->json('delivery')->nullable();
-            $table->integer('pharmacy')->nullable();
+            if (!Schema::hasColumn('users', 'checkboxes')) {
+                $table->string('checkboxes')->nullable();
+            }
+            if (!Schema::hasColumn('users', 'delivery')) {
+                $table->json('delivery')->nullable();
+            }
+            if (!Schema::hasColumn('users', 'pharmacy')) {
+                $table->integer('pharmacy')->nullable();
+            }
         });
     }
 
