@@ -2,6 +2,7 @@
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\File;
 
 return new class extends Migration
 {
@@ -37,7 +38,7 @@ return new class extends Migration
 
     public function down(): void
     {
-        $viewsPath = database_path('views/');
+        $viewsPath = database_path('sql/viewes/');
         
         if (!File::exists($viewsPath)) {
             return;

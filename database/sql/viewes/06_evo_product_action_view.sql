@@ -1,6 +1,23 @@
-create or replace view evo_product_action_view as
-select eav.action_id, not not coalesce(find_in_set(epv.product_id, eav.goods_ids), 0) as promotion_flg,
-       eav.pagetitle as promotion_text, epv.*
-from evo_products_view epv
-         left join evo_actions_view eav
-                   on find_in_set(epv.product_id, eav.goods_ids);
+CREATE OR REPLACE VIEW evo_product_action_view AS
+SELECT
+
+    product_id,
+
+    promotion_id,
+
+    promotion_text,
+
+    promotion_flg,
+
+    published,
+
+    create_dttm_raw,
+    edited_dttm_raw,
+    published_dttm_raw,
+
+    create_dttm,
+    edited_dttm,
+    published_dttm
+
+FROM product_action_cache;
+-- кандидат на удаление

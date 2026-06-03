@@ -10,3 +10,4 @@ select product_id,
 from evo_category_product_view
 group by product_id
 ;
+-- кандидат на удаление

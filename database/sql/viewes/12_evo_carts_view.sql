@@ -48,17 +48,17 @@ SELECT
                                    LIMIT 1
                                ),
                                'promocodes_json', (
-                                   SELECT eppvj.promocodes_json
-                                   FROM evo_product_promocodes_view_json eppvj
-                                   WHERE eppvj.product_id = cesc.evo_site_content_id
-                                   LIMIT 1
-                               ),
-                               'action_json', (
-                                   SELECT epavj.action_json
-                                   FROM evo_product_action_view_json epavj
-                                   WHERE epavj.product_id = cesc.evo_site_content_id
-                                   LIMIT 1
-                               )
+                                    SELECT ppc.promocodes_json
+                                    FROM product_promocode_json_cache ppc
+                                    WHERE ppc.product_id = cesc.evo_site_content_id
+                                    LIMIT 1
+                                ),
+                                'action_json', (
+                                    SELECT pac.action_json
+                                    FROM product_action_json_cache pac
+                                    WHERE pac.product_id = cesc.evo_site_content_id
+                                    LIMIT 1
+                                )
                        )
                )
         FROM cart_evo_site_content cesc

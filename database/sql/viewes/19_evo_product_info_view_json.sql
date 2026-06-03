@@ -32,16 +32,16 @@ select
             'product_sticker', epv.product_sticker,
             'delivery', epv.delivery
     ) as product_charachters,
-    epavj.action_json,
-    eppvj.promocodes_json,
-    epcj.categories_json
+    pac.action_json,
+    ppc.promocodes_json,
+    cjc.categories_json
 from evo_products_view epv
-         left join evo_product_action_view_json epavj on (
-    epv.product_id = epavj.product_id
+         left join product_action_json_cache pac on (
+    epv.product_id = pac.product_id
     )
-         left join evo_product_promocodes_view_json eppvj on (
-    epv.product_id = eppvj.product_id
+         left join product_promocode_json_cache ppc on (
+    epv.product_id = ppc.product_id
     )
-         left join evo_product_categories_json epcj on (
-    epv.product_id = epcj.product_id
+         left join category_json_cache cjc on (
+    epv.product_id = cjc.product_id
     );

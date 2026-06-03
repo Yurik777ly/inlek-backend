@@ -19,9 +19,9 @@ WITH RECURSIVE
             -- quantity не может быть больше stock_count
             CAST(LEAST(cesc.quantity, CAST(COALESCE(eppv.stock_count, '0') AS UNSIGNED)) AS UNSIGNED) AS quantity,
             COALESCE(eod.price, 0) AS price,
-            CASE 
-                WHEN COALESCE(eod.price_old, 0) = 0 THEN COALESCE(eod.price, 0) 
-                ELSE COALESCE(eod.price_old, 0) 
+            CASE
+                WHEN COALESCE(eod.price_old, 0) = 0 THEN COALESCE(eod.price, 0)
+                ELSE COALESCE(eod.price_old, 0)
             END AS price_old,
             CAST(COALESCE(eppv.stock_count, '0') AS UNSIGNED) AS stock_count
         FROM user_cart c
@@ -104,7 +104,7 @@ WITH RECURSIVE
             ci.price_old,
             ci.stock_count,
             ci.requested_quantity,
-            CASE 
+            CASE
                 WHEN ci.stock_count = 0 THEN 'absent'
                 ELSE 'full'
             END AS availability,
@@ -239,7 +239,7 @@ SELECT
                     )
                 ), JSON_ARRAY())
                 FROM (
-                    SELECT 
+                    SELECT
                         pp2.product_id,
                         MAX(pp2.quantity) as quantity,
                         MAX(pp2.stock_count) as stock_count,
@@ -300,7 +300,7 @@ SELECT
                             'total_discount_with_promos', MAX(pp2.discount_with_promos) * MAX(pp2.quantity),
                             'total_discount_only_promos', (MAX(pp2.discount_with_promos) - MAX(pp2.discount_without_promos)) * MAX(pp2.quantity)
                         ) as product_totals,
-                        (SELECT IFNULL(action_json, JSON_OBJECT()) FROM evo_product_action_view_json WHERE product_id = pp2.product_id LIMIT 1) as action_json
+                        (SELECT IFNULL(action_json, JSON_OBJECT()) FROM product_action_json_cache WHERE product_id = pp2.product_id LIMIT 1) as action_json
                     FROM product_prices pp2
                     WHERE pp2.cart_id = pp.cart_id
                     GROUP BY pp2.product_id
