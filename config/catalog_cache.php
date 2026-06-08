@@ -44,10 +44,10 @@ return [
      * Имена TV-полей аптек (evo_site_tmplvars.name).
      */
     'pharmacy_tmplvar_names' => [
-        'address' => ['address', 'pharmacy_address', 'adres'],
-        'coordinates' => ['coordinates', 'coords', 'map'],
-        'schedule' => ['schedule', 'work_time', 'working_hours'],
-        'image' => ['image', 'photo', 'pharmacy_image'],
+        'address' => ['pharmacy_address', 'address', 'adres'],
+        'coordinates' => ['pharmacy_coordinates', 'coordinates', 'coords', 'map'],
+        'schedule' => ['pharmacy_work_time', 'schedule', 'work_time', 'working_hours'],
+        'image' => ['pharmacy_image', 'image', 'photo'],
     ],
 
     'category_tmplvar_ids' => [
@@ -60,5 +60,13 @@ return [
     'schedule' => [
         'enabled' => (bool) env('CATALOG_CACHE_SCHEDULE_ENABLED', false),
         'cron' => env('CATALOG_CACHE_SCHEDULE_CRON', '30 4 * * *'),
+    ],
+
+    /*
+     * Инкрементальное обновление offers / promocodes (catalog:refresh-cache --incremental).
+     * overlap_seconds — запас при чтении watermark, чтобы не пропустить строки на границе запусков.
+     */
+    'incremental' => [
+        'overlap_seconds' => (int) env('CATALOG_CACHE_INCREMENTAL_OVERLAP', 300),
     ],
 ];

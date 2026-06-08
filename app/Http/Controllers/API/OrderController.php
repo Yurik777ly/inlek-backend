@@ -88,10 +88,7 @@ class OrderController extends Controller
             $processor = $this->OrderService->createPaymentProcess($orderArray);
            
 
-            $fields = null;
-            if (isset($orderArray['fields']) && is_string($orderArray['fields'])) {
-                $fields = json_decode($orderArray['fields'], true);
-            }
+            $fields = $this->decodeOrderFields($orderArray);
 
             if (isset($orderArray['created_at'])) {
                 $orderArray['created_at'] = $this->formatDateTimeISO($orderArray['created_at']);
@@ -105,18 +102,14 @@ class OrderController extends Controller
             $response = [
                 'order' => $orderArray,
                 'products' => $orderData->order_products_json ?? [],
-                'summary' => [
-                    'products_price' => round($fields['sum']['pricesSum'] ?? ($orderData->sum_prices ?? 0), 2),
-                    'products_price_old' => round($fields['sum']['oldPricesSum'] ?? ($orderData->sum_prices_old ?? 0), 2),
-                    'discount_percent' => round($fields['sum']['oldPricesSaleSum'] ?? ($orderData->sum_prices_sales_old ?? 0), 2),
-                    'discount_amount' => round($orderData->discount_amount ?? 0, 2),
-                    'promocodes_discount' => round($fields['sum']['promocodesDiscount'] ?? ($orderData->promocodes_discount ?? 0), 2),
-                    'delivery_price' => round($fields['sum']['deliverySum'] ?? ($orderData->delivery_sum ?? 0), 2),
-                    'total_price' => round($fields['sum']['totalSum'] ?? ($orderData->total_sum ?? 0), 2),
-                ],
+                'summary' => $this->buildOrderSummary($orderData, $orderArray, $fields),
                 'delivery_info' => [
-                    'method' => $fields['delivery_method'] ?? ($orderData->delivery_method ?? null),
-                    'method_title' => $fields['delivery_method_title'] ?? ($orderData->delivery_method_title ?? null),
+                    'method' => (is_array($fields) ? ($fields['delivery_method'] ?? null) : null)
+                        ?? $orderArray['delivery_method']
+                        ?? ($orderData->delivery_method ?? null),
+                    'method_title' => (is_array($fields) ? ($fields['delivery_method_title'] ?? null) : null)
+                        ?? $orderArray['delivery_method_title']
+                        ?? ($orderData->delivery_method_title ?? null),
                     'address' => $orderData->full_delivery_address ?? null,
                     'is_delivery' => $orderData->is_delivery ?? false,
                     'entrance' => $orderData->delivery_entrance ?? null,
@@ -126,8 +119,12 @@ class OrderController extends Controller
                     'comment' => $orderData->delivery_comment ?? null,
                 ],
                 'payment_info' => [
-                    'method' => $fields['payment_method'] ?? ($orderData->payment_method ?? null),
-                    'method_title' => $fields['payment_method_title'] ?? ($orderData->payment_method_title ?? null),
+                    'method' => (is_array($fields) ? ($fields['payment_method'] ?? null) : null)
+                        ?? $orderArray['payment_method']
+                        ?? ($orderData->payment_method ?? null),
+                    'method_title' => (is_array($fields) ? ($fields['payment_method_title'] ?? null) : null)
+                        ?? $orderArray['payment_method_title']
+                        ?? ($orderData->payment_method_title ?? null),
                     'payment_link' => $processor !== null ? $processor->getPaymentLink(
                         EvoCommerceOrders::find($orderId),
                         EvoCommerceOrderPayments::where('order_id', $orderId)->first()
@@ -190,15 +187,23 @@ class OrderController extends Controller
                 $orderArray['status_title'] = $order->status->title;
             }
 
-            if (isset($orderArray['fields']) && is_string($orderArray['fields'])) {
-                $fields = json_decode($orderArray['fields'], true);
-                if ($fields) {
-                    $orderArray['total_sum'] = $fields['sum']['totalSum'] ?? 0;
-                    $orderArray['delivery_method_title'] = $fields['delivery_method_title'] ?? null;
-                    $orderArray['payment_method_title'] = $fields['payment_method_title'] ?? null;
-                }
-                unset($orderArray['fields']);
+            $fields = $this->decodeOrderFields($orderArray);
+            if ($fields) {
+                $sum = $fields['sum'] ?? [];
+                $amount = (float) ($orderArray['amount'] ?? 0);
+                $orderArray['sum_prices'] = (float) ($sum['pricesSum'] ?? $amount);
+                $orderArray['sum_prices_old'] = (float) ($sum['oldPricesSum'] ?? 0);
+                $orderArray['sum_prices_sales_old'] = (float) ($sum['oldPricesSaleSum'] ?? 0);
+                $orderArray['delivery_sum'] = (float) ($sum['deliverySum'] ?? 0);
+                $orderArray['total_sum'] = (float) ($sum['totalSum'] ?? $amount);
+                $orderArray['delivery_method_title'] = $fields['delivery_method_title'] ?? null;
+                $orderArray['payment_method_title'] = $fields['payment_method_title'] ?? null;
+            } else {
+                $amount = (float) ($orderArray['amount'] ?? 0);
+                $orderArray['sum_prices'] = $amount;
+                $orderArray['total_sum'] = $amount;
             }
+            unset($orderArray['fields']);
 
             if (isset($orderArray['created_at'])) {
                 $orderArray['created_at'] = $this->formatDateTimeISO($orderArray['created_at']);
@@ -211,6 +216,79 @@ class OrderController extends Controller
         });
 
         return $this->responseOk(data: $transformedOrders);
+    }
+
+    private function decodeOrderFields(?array $orderArray): ?array
+    {
+        if ($orderArray === null || !isset($orderArray['fields'])) {
+            return null;
+        }
+
+        $fields = $orderArray['fields'];
+
+        if (is_string($fields)) {
+            $decoded = json_decode($fields, true);
+
+            return is_array($decoded) ? $decoded : null;
+        }
+
+        return is_array($fields) ? $fields : null;
+    }
+
+    private function buildOrderSummary(object $orderData, array $orderArray, ?array $fields): array
+    {
+        $sum = is_array($fields) ? ($fields['sum'] ?? []) : [];
+        $amount = (float) ($orderArray['amount'] ?? $orderData->amount ?? 0);
+
+        $productsPrice = (float) (
+            $sum['pricesSum']
+            ?? $orderArray['sum_prices']
+            ?? $orderData->sum_prices
+            ?? $orderData->prices_sum
+            ?? $amount
+        );
+
+        $productsPriceOld = (float) (
+            $sum['oldPricesSum']
+            ?? $orderArray['sum_prices_old']
+            ?? $orderData->sum_prices_old
+            ?? $orderData->old_prices_sum
+            ?? 0
+        );
+
+        $deliveryPrice = (float) (
+            $sum['deliverySum']
+            ?? $orderArray['delivery_sum']
+            ?? $orderData->delivery_sum
+            ?? 0
+        );
+
+        $totalPrice = (float) (
+            $sum['totalSum']
+            ?? $orderArray['total_sum']
+            ?? $orderData->total_sum
+            ?? $amount
+        );
+
+        return [
+            'products_price' => round($productsPrice, 2),
+            'products_price_old' => round($productsPriceOld, 2),
+            'discount_percent' => round((float) (
+                $sum['oldPricesSaleSum']
+                ?? $orderArray['sum_prices_sales_old']
+                ?? $orderData->sum_prices_sales_old
+                ?? $orderData->old_prices_sale_sum
+                ?? 0
+            ), 2),
+            'discount_amount' => round((float) ($orderData->discount_amount ?? 0), 2),
+            'promocodes_discount' => round((float) (
+                $sum['promocodesDiscount']
+                ?? $orderData->promocodes_discount
+                ?? 0
+            ), 2),
+            'delivery_price' => round($deliveryPrice, 2),
+            'total_price' => round($totalPrice, 2),
+        ];
     }
 
     private function formatDateTimeISO($dateTime): string

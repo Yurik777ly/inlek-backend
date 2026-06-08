@@ -437,6 +437,21 @@ class CartService
         return $data;
     }
 
+    private function decodeCartJsonField(mixed $value): array
+    {
+        if (is_array($value)) {
+            return $value;
+        }
+
+        if (is_string($value) && $value !== '') {
+            $decoded = json_decode($value, true);
+
+            return is_array($decoded) ? $decoded : [];
+        }
+
+        return [];
+    }
+
     private function formatCartData (CartsView $cartsView):array {
         $cartsView = $cartsView->toArray();
 
@@ -464,20 +479,29 @@ class CartService
         $totalSum = 0;
         if (is_array($products)) {
             foreach ($products as $product ) {
-                $sumProduct = round($product['quantity']*$product['product_charachters']['product_price_from'],2);
+                $characters = $this->decodeCartJsonField($product['product_charachters'] ?? null);
+                $quantity = (int) ($product['quantity'] ?? 0);
+                $price = (float) ($characters['product_price_from'] ?? 0);
+                $productId = (int) ($characters['product_id'] ?? 0);
+
+                if ($productId === 0) {
+                    continue;
+                }
+
+                $sumProduct = round($quantity * $price, 2);
                 $totalSum = $totalSum+$sumProduct;
                 $finalArray['cart']['products'][] = [
                     'prices' => [
-                        'price' => round($product['product_charachters']['product_price_from'], 2),
-                        'final_price' => round($product['product_charachters']['product_price_from'], 2),
-                        'price_old' => round($product['product_charachters']['product_price_from'], 2),
+                        'price' => round($price, 2),
+                        'final_price' => round($price, 2),
+                        'price_old' => round($price, 2),
                     ],
-                    'quantity' => $product['quantity'],
-                    'requested_quantity' => $product['quantity'],
-                    'product_id' => $product['product_charachters']['product_id'],
+                    'quantity' => $quantity,
+                    'requested_quantity' => $quantity,
+                    'product_id' => $productId,
                     'availability' => 'full',
-                    'action_json' => $product['action_json'],
-                    'product_info' => $product['product_charachters'],
+                    'action_json' => $product['action_json'] ?? null,
+                    'product_info' => $characters,
                     'product_totals' =>  [
                         "total" => $sumProduct,
                         "total_old" => $sumProduct,

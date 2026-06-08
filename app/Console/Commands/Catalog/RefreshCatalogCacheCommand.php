@@ -9,7 +9,8 @@ class RefreshCatalogCacheCommand extends Command
 {
     protected $signature = 'catalog:refresh-cache
                             {--only=* : Шаги: pharmacies, products, offers, product_pharmacies, categories, category_json, promocodes, actions, relations, product_characters}
-                            {--no-truncate : Не очищать таблицы перед вставкой}';
+                            {--incremental : Инкрементально обновить offers и promocodes (остальные шаги — полностью)}
+                            {--no-truncate : Не очищать таблицы перед вставкой (только для полного режима)}';
 
     protected $description = 'Наполнить кэш-таблицы каталога из MODX/1С (запускать после обмена с 1С)';
 
@@ -29,12 +30,19 @@ class RefreshCatalogCacheCommand extends Command
             }
         }
 
+        $incremental = (bool) $this->option('incremental');
         $truncate = !$this->option('no-truncate');
 
-        $this->info('Обновление кэша каталога' . ($only ? ' (' . implode(', ', $only) . ')' : ' (полный цикл)') . '...');
+        if ($incremental && $this->option('no-truncate')) {
+            $this->warn('Флаг --no-truncate игнорируется в режиме --incremental.');
+        }
+
+        $mode = $incremental ? 'инкрементально' : 'полностью';
+        $scope = $only ? implode(', ', $only) : 'полный цикл';
+        $this->info("Обновление кэша каталога ({$mode}, {$scope})...");
 
         $started = microtime(true);
-        $counts = $refresher->refresh($only, $truncate);
+        $counts = $refresher->refresh($only, $truncate, $incremental);
         $elapsed = round(microtime(true) - $started, 2);
 
         $rows = [];

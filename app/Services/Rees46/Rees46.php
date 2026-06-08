@@ -25,17 +25,22 @@ class Rees46
 
         if ($categoryId) $params['category'] = $categoryId;
 
-        $response = Http::timeout(1)
-            ->get('https://api.rees46.ru/recommend/' . self::CODE_TOP, $params);
+        try {
+            $response = Http::timeout(3)
+                ->get('https://api.rees46.ru/recommend/' . self::CODE_TOP, $params);
+        } catch (\Throwable) {
+            return [];
+        }
 
-        if($response->successful() && $response->json('recommends')) {
+        if ($response->successful() && $response->json('recommends')) {
             $productIds = $response->json('recommends');
             try {
                 return self::getProductsRecommendation($productIds);
-            } catch (\Exception $exception) {
+            } catch (\Throwable) {
                 return [];
             }
         }
+
         return [];
     }
 
