@@ -2,6 +2,7 @@
 
 namespace App\Console;
 
+use App\Console\Commands\Catalog\RefreshCatalogCacheCommand;
 use App\Console\Commands\Firebase\CheckForgottenCartCommand;
 use App\Console\Commands\Firebase\CheckUpdatedOrderStatusCommand;
 use App\Console\Commands\Firebase\NotifyUserProductCommand;
@@ -24,6 +25,11 @@ class Kernel extends ConsoleKernel
          $schedule->command(RememberFailedRegistationCommand::class)->daily();
          $schedule->command(NotifyUserProductCommand::class)->hourly();
          $schedule->command(CheckUpdatedOrderStatusCommand::class)->everyThreeMinutes();
+
+         if (config('catalog_cache.schedule.enabled')) {
+             $schedule->command(RefreshCatalogCacheCommand::class)
+                 ->cron(config('catalog_cache.schedule.cron'));
+         }
     }
 
     /**

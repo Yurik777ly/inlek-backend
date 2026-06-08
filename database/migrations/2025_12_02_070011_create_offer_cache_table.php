@@ -11,6 +11,7 @@ return new class extends Migration
      */
     public function up(): void
     {
+        // Слой загрузки из evo_offers; для API используйте product_pharmacy_cache (view evo_product_pharmacy_view).
         Schema::create('offer_cache', function (Blueprint $table) {
 
             $table->unsignedBigInteger('product_id');

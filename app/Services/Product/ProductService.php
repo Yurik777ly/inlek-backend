@@ -153,11 +153,11 @@ class ProductService
             ->when(!empty($productDto->brand), function($query) use($productDto) {
                 return $query->whereIn('brand', $productDto->brand);
             })
-            ->when((isset($productDto->recipe)) && $productDto->recipe == false, function($query) use($productDto) {
-                return $query->whereRaw("JSON_EXTRACT(product_charachters, '$.is_recipe') = 'false'");
+            ->when((isset($productDto->recipe)) && $productDto->recipe == false, function($query) {
+                return $query->where('is_recipe', false);
             })
-            ->when((isset($productDto->recipe)) && $productDto->recipe == true, function($query) use($productDto) {
-                return $query->whereRaw("JSON_EXTRACT(product_charachters, '$.is_recipe') = 'true'");
+            ->when((isset($productDto->recipe)) && $productDto->recipe == true, function($query) {
+                return $query->where('is_recipe', true);
             })
             ->when(!empty($productDto->country), function($query) use($productDto) {
                 return $query->whereIn('country', $productDto->country);
@@ -191,7 +191,7 @@ class ProductService
                 return $query->orderBy('evo_product_info_view_json_opt.product_id', 'ASC');
             })
             //->simplePaginate($perPage, ['evo_product_info_view_json_opt.product_id','product_charachters','action_json','promocodes_json','categories_json'], 'page', $page);
-            ->paginate($perPage, ['evo_product_info_view_json.product_id','product_charachters','action_json','promocodes_json','categories_json'], 'page', $page);
+            ->paginate($perPage, ['evo_product_info_view_json_opt.product_id','product_charachters','action_json','promocodes_json','categories_json'], 'page', $page);
 
         return $priceFilter;
     }
@@ -201,9 +201,9 @@ class ProductService
         $query = $this->ProductPharmacyJson->query()
             ->select([
                 'evo_product_pharmacy_json.product_id',
-                'evo_product_info_view_json_opt_noact.is_recipe',
-                'evo_product_info_view_json_opt_noact.is_alcohol',
-                'evo_product_info_view_json_opt_noact.is_available',
+                'evo_product_info_view_json_opt.is_recipe',
+                'evo_product_info_view_json_opt.is_alcohol',
+                'evo_product_info_view_json_opt.is_available',
                 'evo_product_pharmacy_json.product_pharmacy_json',
                 'evo_product_pharmacy_json.coordinates',
                 'evo_product_pharmacy_json.pharmacy_id',
@@ -211,10 +211,10 @@ class ProductService
             ])
             ->distinct()
             ->join(
-                'evo_product_info_view_json_opt_noact',
+                'evo_product_info_view_json_opt',
                 'evo_product_pharmacy_json.product_id',
                 '=',
-                'evo_product_info_view_json_opt_noact.product_id'
+                'evo_product_info_view_json_opt.product_id'
             )
             ->where('evo_product_pharmacy_json.product_id', $productDto->productId);
 
@@ -224,7 +224,7 @@ class ProductService
 
         $query->when(!empty($productDto->pharmacyDelivery), function($q) use($productDto) {
             return $q
-                ->whereIn('evo_product_info_view_json_opt_noact.delivery', $productDto->pharmacyDelivery)
+                ->whereIn('evo_product_info_view_json_opt.delivery', $productDto->pharmacyDelivery)
                 ->whereIn('evo_product_pharmacy_json.pharmacy_delivery', $productDto->pharmacyDelivery);
         });
 

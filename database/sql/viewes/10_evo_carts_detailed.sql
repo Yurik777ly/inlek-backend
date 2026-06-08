@@ -17,17 +17,15 @@ WITH RECURSIVE
             cesc.evo_site_content_id AS product_id,
             cesc.quantity AS requested_quantity, -- Сохраняем исходное количество из корзины
             -- quantity не может быть больше stock_count
-            CAST(LEAST(cesc.quantity, CAST(COALESCE(eppv.stock_count, '0') AS UNSIGNED)) AS UNSIGNED) AS quantity,
-            COALESCE(eod.price, 0) AS price,
+            CAST(LEAST(cesc.quantity, CAST(COALESCE(eppv.stock_count, 0) AS UNSIGNED)) AS UNSIGNED) AS quantity,
+            COALESCE(eppv.price, 0) AS price,
             CASE
-                WHEN COALESCE(eod.price_old, 0) = 0 THEN COALESCE(eod.price, 0)
-                ELSE COALESCE(eod.price_old, 0)
+                WHEN COALESCE(eppv.price_old, 0) = 0 THEN COALESCE(eppv.price, 0)
+                ELSE COALESCE(eppv.price_old, 0)
             END AS price_old,
-            CAST(COALESCE(eppv.stock_count, '0') AS UNSIGNED) AS stock_count
+            CAST(COALESCE(eppv.stock_count, 0) AS UNSIGNED) AS stock_count
         FROM user_cart c
                  JOIN cart_evo_site_content cesc ON c.id = cesc.cart_id
-                 LEFT JOIN evo_offers eod ON cesc.evo_site_content_id = eod.product_id
-            AND eod.pharmacy_id = c.pharmacy_id
                  LEFT JOIN evo_product_pharmacy_view eppv ON cesc.evo_site_content_id = eppv.product_id
             AND c.pharmacy_id = eppv.pharmacy_id
     ),
@@ -246,39 +244,22 @@ SELECT
                         MAX(pp2.requested_quantity) as requested_quantity,
                         MAX(pp2.availability) as availability,
                         (
-                            SELECT JSON_OBJECT(
-                                'pagetitle', epv.pagetitle,
-                                'parent', epv.parent,
-                                'product_description', epv.product_description,
-                                'instruction', epv.instruction,
-                                'mnn', epv.mnn,
-                                'mnn_lat', epv.mnn_lat,
-                                'code', epv.code,
-                                'brand', epv.brand,
-                                'country', epv.country,
-                                'form', epv.form,
-                                'release_form', epv.release_form,
-                                'termin', epv.termin,
-                                'temperature', epv.temperature,
-                                'image', epv.image,
-                                'dose', epv.dose,
-                                'recipe', epv.recipe,
-                                'is_recipe', epv.is_recipe,
-                                'is_alcohol', epv.is_alcohol,
-                                'product_insert', epv.product_insert,
-                                'product_time_register', epv.product_time_register,
-                                'product_register', epv.product_register,
-                                'product_date_register', epv.product_date_register,
-                                'product_trademark', epv.product_trademark,
-                                'product_price_from', epv.product_price_from,
-                                'product_price_from_old', epv.product_price_from_old,
-                                'product_price_from_percent', epv.product_price_from_percent,
-                                'product_sticker', epv.product_sticker,
-                                'delivery', epv.delivery,
-                                'other_pharmacy', (SELECT 1 as available FROM evo_offers WHERE epv.pharmacy_id <> evo_offers.pharmacy_id AND evo_offers.pharmacy_id <> 17599997 and pp2.product_id = evo_offers.product_id GROUP BY evo_offers.product_id)
+                            SELECT JSON_MERGE_PATCH(
+                                epiv.product_charachters,
+                                JSON_OBJECT(
+                                    'other_pharmacy', (
+                                        SELECT 1
+                                        FROM product_pharmacy_cache opc
+                                        WHERE opc.product_id = pp2.product_id
+                                          AND opc.pharmacy_id <> 17599997
+                                          AND opc.stock_count > 0
+                                          AND (pp.pharmacy_id IS NULL OR opc.pharmacy_id <> pp.pharmacy_id)
+                                        LIMIT 1
+                                    )
+                                )
                             )
-                            FROM evo_products_view epv
-                            WHERE epv.product_id = pp2.product_id
+                            FROM evo_product_info_view_json epiv
+                            WHERE epiv.product_id = pp2.product_id
                             LIMIT 1
                         ) as product_info,
                         JSON_OBJECT(

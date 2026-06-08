@@ -18,6 +18,8 @@ return new class extends Migration
             $table->longText('promocodes_json')->nullable();
 
             $table->timestamp('updated_at')->nullable();
+
+            $table->index('updated_at');
         });
     }
 

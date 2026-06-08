@@ -20,4 +20,3 @@ SELECT
     published_dttm
 
 FROM product_action_cache;
--- кандидат на удаление

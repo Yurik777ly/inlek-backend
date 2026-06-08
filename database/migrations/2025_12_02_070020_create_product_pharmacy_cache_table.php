@@ -49,11 +49,7 @@ return new class extends Migration
                 'pharmacy_id'
             ]);
 
-            $table->index('product_id');
-
             $table->index('pharmacy_id');
-
-            $table->index('stock_count');
 
             $table->index([
                 'product_id',

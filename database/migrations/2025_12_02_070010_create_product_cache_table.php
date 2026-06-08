@@ -70,6 +70,8 @@ return new class extends Migration
 
             $table->string('delivery')->nullable();
 
+            $table->longText('product_charachters_json')->nullable();
+
             $table->boolean('is_available')->default(false);
 
             $table->integer('pub_date')->nullable();

@@ -1,19 +1,15 @@
 CREATE OR REPLACE VIEW evo_product_pharmacy_view AS
 SELECT
-    oc.product_id,
-    oc.pharmacy_id,
-
-    oc.product_name,
-    oc.pharmacy_alias,
-    oc.pharmacy_name,
-    oc.coordinates,
-    oc.schedule,
-    oc.address,
-
-    oc.price,
-    oc.price_old,
-
-    oc.stock_count,
-    oc.expiration_date
-
-FROM offer_cache oc;
+    ppc.product_id,
+    ppc.pharmacy_id,
+    ppc.product_name,
+    ppc.pharmacy_alias,
+    ppc.pharmacy_name,
+    ppc.coordinates,
+    ppc.schedule,
+    ppc.address,
+    ppc.price,
+    ppc.price_old,
+    ppc.stock_count,
+    ppc.expiration_date
+FROM product_pharmacy_cache ppc;

@@ -1,4 +1,4 @@
-CREATE OR REPLACE VIEW evo_product_info_view_json_opt_noact AS
+CREATE OR REPLACE VIEW evo_product_info_view_json AS
 SELECT
     pc.product_id,
     pc.pagetitle,
@@ -28,7 +28,7 @@ SELECT
     pc.image,
     pc.dose,
     pc.recipe,
-    IF(pc.is_recipe, 'true', 'false') AS is_recipe,
+    pc.is_recipe,
     pc.product_insert,
     pc.product_time_register,
     pc.product_register,
@@ -38,10 +38,9 @@ SELECT
     pc.product_price_from_old,
     pc.product_price_from_percent,
     pc.product_sticker,
-    IF(pc.is_alcohol, 'yes', 'no') AS is_alcohol,
+    pc.is_alcohol,
     pc.delivery,
     pc.is_available,
-    ppc.promocodes_json,
     COALESCE(
         NULLIF(pc.product_charachters_json, ''),
         JSON_OBJECT(
@@ -62,8 +61,8 @@ SELECT
             'image', pc.image,
             'dose', pc.dose,
             'recipe', pc.recipe,
-            'is_recipe', IF(pc.is_recipe, 'true', 'false'),
-            'is_alcohol', IF(pc.is_alcohol, 'yes', 'no'),
+            'is_recipe', pc.is_recipe,
+            'is_alcohol', pc.is_alcohol,
             'product_insert', pc.product_insert,
             'product_time_register', pc.product_time_register,
             'product_register', pc.product_register,
@@ -75,6 +74,11 @@ SELECT
             'product_sticker', pc.product_sticker,
             'delivery', pc.delivery
         )
-    ) AS product_charachters
+    ) AS product_charachters,
+    pac.action_json,
+    ppc.promocodes_json,
+    cjc.categories_json
 FROM product_cache pc
-LEFT JOIN product_promocode_json_cache ppc ON ppc.product_id = pc.product_id;
+LEFT JOIN product_action_json_cache pac ON pac.product_id = pc.product_id
+LEFT JOIN product_promocode_json_cache ppc ON ppc.product_id = pc.product_id
+LEFT JOIN category_json_cache cjc ON cjc.product_id = pc.product_id;

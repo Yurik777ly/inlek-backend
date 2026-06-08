@@ -25,6 +25,7 @@ return new class extends Migration
             ]);
 
             $table->index('product_id');
+            $table->index('category_id');
         });
     }
 
