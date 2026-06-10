@@ -8,6 +8,7 @@ use App\Http\Controllers\API\OrderController;
 use App\Http\Controllers\API\ProductController;
 use App\Http\Controllers\API\ProfileController;
 use App\Http\Controllers\API\V2\SearchController;
+use App\Http\Controllers\API\Internal\CatalogCacheController;
 use App\Http\Controllers\API\Push\NotificationController;
 
 use Illuminate\Support\Facades\Route;
@@ -93,6 +94,12 @@ Route::prefix('categories')->group(function () {
 });
 
 Route::get('/v2/search', [SearchController::class, 'search']);
+
+Route::prefix('internal/catalog')
+    ->middleware('catalog.cache.token')
+    ->group(function () {
+        Route::post('/refresh-offers', [CatalogCacheController::class, 'refreshOffers']);
+    });
 /*
 Route::prefix('search')->group(function () {
     Route::post('/',                [SearchController::class,   'doSearch']);                         //!!!

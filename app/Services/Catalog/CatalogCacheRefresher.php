@@ -251,6 +251,43 @@ class CatalogCacheRefresher
         return $count;
     }
 
+    /**
+     * Точечное обновление offer_cache и product_pharmacy_cache по списку product_id.
+     * Вызывается после обмена офферами с 1С (MODX → evo_offers).
+     *
+     * @param  array<int, int>  $productIds
+     */
+    public function refreshOffersForProducts(array $productIds): int
+    {
+        $productIds = array_values(array_unique(array_map('intval', $productIds)));
+
+        if ($productIds === []) {
+            return 0;
+        }
+
+        $idsSql = $this->quoteIntList($productIds);
+
+        $upserted = DB::affectingStatement(
+            $this->buildOffersInsertSql("AND eo.product_id IN ({$idsSql})")
+            . $this->buildOffersUpsertClause()
+        );
+
+        $deleted = DB::delete(<<<SQL
+            DELETE oc FROM offer_cache oc
+            WHERE oc.product_id IN ({$idsSql})
+              AND NOT EXISTS (
+                  SELECT 1 FROM evo_offers eo
+                  WHERE eo.product_id = oc.product_id
+                    AND eo.pharmacy_id = oc.pharmacy_id
+              )
+        SQL);
+
+        $this->lastTouchedProductIds = $productIds;
+        $this->refreshProductPharmaciesIncremental($productIds);
+
+        return $upserted + $deleted;
+    }
+
     public function refreshOffersIncremental(): int
     {
         $since = $this->refreshState->getSince('offers');

@@ -69,4 +69,11 @@ return [
     'incremental' => [
         'overlap_seconds' => (int) env('CATALOG_CACHE_INCREMENTAL_OVERLAP', 300),
     ],
+
+    /*
+     * Webhook из MODX после обмена офферами с 1С (POST /api/internal/catalog/refresh-offers).
+     */
+    'webhook' => [
+        'token' => env('CATALOG_CACHE_WEBHOOK_TOKEN', ''),
+    ],
 ];

@@ -98,9 +98,9 @@ class OrderService
                             if ($user && method_exists($user, 'cart') && $user->cart) {
                                 $user->cart->products()->detach($productIds);
                             }
-                            if ($user->fcm_token) {
+                            if ($user && $user->fcm_token) {
                                 $result = $this->firebaseService->sendToDevice(
-                                    $order->user->fcm_token,
+                                    $user->fcm_token,
                                     [
                                         'title' => 'Inlek. Информация о заказе.',
                                         'body'  => 'Ваш заказ оплачен.',
