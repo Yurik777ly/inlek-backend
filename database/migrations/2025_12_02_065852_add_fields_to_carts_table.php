@@ -12,11 +12,27 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('carts', function (Blueprint $table) {
-            $table->integer('pharmacy_id')->nullable();
-            $table->string('promocodes',400)->nullable();
-            $table->string('delivery_zone',100)->nullable();
-            $table->string('geo_lat',20)->nullable();
-            $table->string('geo_long',20)->nullable();
+
+            if (!Schema::hasColumn('carts', 'pharmacy_id')) {
+                $table->integer('pharmacy_id')->nullable();
+            }
+
+            if (!Schema::hasColumn('carts', 'promocodes')) {
+                $table->string('promocodes', 400)->nullable();
+            }
+
+            if (!Schema::hasColumn('carts', 'delivery_zone')) {
+                $table->string('delivery_zone', 100)->nullable();
+            }
+
+            if (!Schema::hasColumn('carts', 'geo_lat')) {
+                $table->string('geo_lat', 20)->nullable();
+            }
+
+            if (!Schema::hasColumn('carts', 'geo_long')) {
+                $table->string('geo_long', 20)->nullable();
+            }
+
         });
     }
 
@@ -27,9 +43,9 @@ return new class extends Migration
     {
         Schema::table('carts', function (Blueprint $table) {
             $table->dropColumn([
-                'pharmacy_id', 
-                'promocodes', 
-                'delivery_zone', 
+                'pharmacy_id',
+                'promocodes',
+                'delivery_zone',
                 'geo_lat',
                 'geo_long']);
         });
