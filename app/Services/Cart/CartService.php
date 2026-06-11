@@ -477,11 +477,14 @@ class CartService
             'availability_priority' => 0
         ];
         $totalSum = 0;
+        $totalSumOld = 0;
         if (is_array($products)) {
             foreach ($products as $product ) {
                 $characters = $this->decodeCartJsonField($product['product_charachters'] ?? null);
                 $quantity = (int) ($product['quantity'] ?? 0);
                 $price = (float) ($characters['product_price_from'] ?? 0);
+                $priceOldRaw = (float) ($characters['product_price_from_old'] ?? 0);
+                $priceOld = $priceOldRaw > $price ? $priceOldRaw : $price;
                 $productId = (int) ($characters['product_id'] ?? 0);
 
                 if ($productId === 0) {
@@ -489,12 +492,16 @@ class CartService
                 }
 
                 $sumProduct = round($quantity * $price, 2);
-                $totalSum = $totalSum+$sumProduct;
+                $sumProductOld = round($quantity * $priceOld, 2);
+                $discountWithoutPromos = max(0, round($sumProductOld - $sumProduct, 2));
+
+                $totalSum += $sumProduct;
+                $totalSumOld += $sumProductOld;
                 $finalArray['cart']['products'][] = [
                     'prices' => [
                         'price' => round($price, 2),
                         'final_price' => round($price, 2),
-                        'price_old' => round($price, 2),
+                        'price_old' => round($priceOld, 2),
                     ],
                     'quantity' => $quantity,
                     'requested_quantity' => $quantity,
@@ -504,19 +511,20 @@ class CartService
                     'product_info' => $characters,
                     'product_totals' =>  [
                         "total" => $sumProduct,
-                        "total_old" => $sumProduct,
+                        "total_old" => $sumProductOld,
                         "final_total" => $sumProduct,
                         "final_total_with_promos" => $sumProduct,
                         "total_discount_only_promos" => 0.0,
                         "total_discount_with_promos" => 0.0,
-                        "total_discount_without_promos" => 0.0,
+                        "total_discount_without_promos" => $discountWithoutPromos,
                     ],
                 ];
             }
         }
 
-        $finalArray['cart']['totals']['total_price_old'] = round($totalSum, 2);
+        $finalArray['cart']['totals']['total_price_old'] = round($totalSumOld, 2);
         $finalArray['cart']['totals']['total_final_price'] = round($totalSum, 2);
+        $finalArray['cart']['totals']['total_discount'] = max(0, round($totalSumOld - $totalSum, 2));
 
         return $finalArray;
 }
