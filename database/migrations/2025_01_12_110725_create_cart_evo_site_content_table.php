@@ -11,23 +11,25 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('cart_evo_site_content', function (Blueprint $table) {
-            $table->id();
-            $table->unsignedBigInteger('cart_id');
-            $table->unsignedInteger('evo_site_content_id');
-            $table->unsignedTinyInteger('quantity');
-            $table->timestamps();
+        if (!Schema::hasTable('cart_evo_site_content')) {
+            Schema::create('cart_evo_site_content', function (Blueprint $table) {
+                $table->id();
+                $table->unsignedBigInteger('cart_id');
+                $table->unsignedInteger('evo_site_content_id');
+                $table->unsignedTinyInteger('quantity');
+                $table->timestamps();
 
-            $table->foreign('cart_id')
-                ->references('id')
-                ->on('carts')
-                ->cascadeOnDelete();
+                $table->foreign('cart_id')
+                    ->references('id')
+                    ->on('carts')
+                    ->cascadeOnDelete();
 
-            $table->foreign('evo_site_content_id')
-                ->references('id')
-                ->on('evo_site_content')
-                ->cascadeOnDelete();
-        });
+                $table->foreign('evo_site_content_id')
+                    ->references('id')
+                    ->on('evo_site_content')
+                    ->cascadeOnDelete();
+            });
+        }
     }
 
     /**
