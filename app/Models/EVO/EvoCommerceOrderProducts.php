@@ -31,7 +31,6 @@ class EvoCommerceOrderProducts extends Model
                 'options',
                 'meta',
                 'position',
-                'pharmacy_id',
     ];
 
 	protected $hidden = [

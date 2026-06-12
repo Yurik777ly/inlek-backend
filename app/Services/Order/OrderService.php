@@ -133,7 +133,7 @@ class OrderService
 
                 // Получаем данные корзины
                 $cartData = $this->getCartData($orderArray);
-                if (empty($cartData['products'])) {
+                if (empty($cartData['products']) || empty($cartData['orderProducts'])) {
                     return false;
                 }
 
@@ -144,7 +144,7 @@ class OrderService
                 $orderId = $this->createOrder($orderArray, $orderCalculations);
 
                 // Сохраняем товары заказа
-                $this->saveOrderProducts($orderId, $cartData['orderProducts'], $orderArray['pharmacy_id']);
+                $this->saveOrderProducts($orderId, $cartData['orderProducts']);
 
                 // Очищаем корзину
                  $this->clearCartProductsV2($cartData['orderProducts']);
@@ -185,7 +185,13 @@ class OrderService
         );
 
         $this->CartService->setUserGeo('', '');
-        $products = $this->CartService->getCartDetailed($cartDTO);
+
+        $isDeliveryPharmacy = (int) $orderArray['pharmacy_id'] === PharmaciesView::PHARMACY_ID_FOR_DELIVERY
+            || ($orderArray['delivery'] ?? '') === 'delivery';
+
+        $products = $isDeliveryPharmacy
+            ? $this->CartService->getCartDetailedWithoutChoosenPharm($cartDTO)
+            : $this->CartService->getCartDetailed($cartDTO);
 
         if (empty($products)) {
             return [];
@@ -221,9 +227,13 @@ class OrderService
                     $productPromocodes = $this->safeJsonDecode($fullProductInfo->promocodes_json);
                 }
 
+                $productInfo = $product['product_info'] ?? [];
                 $orderProducts[] = [
                     'product_id' => $product['product_id'],
-                    'title' => $product['product_info']['pagetitle'],
+                    'title' => $productInfo['pagetitle']
+                        ?? $productInfo['product_title']
+                        ?? $productInfo['name']
+                        ?? '',
                     'price' => $price,
                     'count' => (int)$quantity,
                     'requested_quantity' => (int)$product['requested_quantity'],
@@ -432,9 +442,10 @@ class OrderService
         return $order->id;
     }
 
-    private function saveOrderProducts(int $orderId, array $orderProducts, int $pharmacyId): void
+    private function saveOrderProducts(int $orderId, array $orderProducts): void
     {
-        $productsToInsert = collect($orderProducts)->map(function ($product) use ($orderId, $pharmacyId) {
+        // pharmacy_id — generated column из JSON options.pharmacy_id
+        $productsToInsert = collect($orderProducts)->map(function ($product) use ($orderId) {
             return [
                 'order_id' => $orderId,
                 'product_id' => $product['product_id'],
@@ -444,7 +455,6 @@ class OrderService
                 'options' => $product['options'],
                 'meta' => $product['meta'],
                 'position' => $product['position'],
-                'pharmacy_id' => $pharmacyId,
             ];
         })->all();
 
@@ -546,7 +556,8 @@ class OrderService
         $fullDeliveryAddress = $this->buildFullDeliveryAddress($orderArray);
 
         $delivery_method = $orderArray['delivery'];
-        $delivery_method_title = ($orderArray['delivery'] == 'self') ? "Самовывоз" : "Доставка";
+        $isDelivery = $delivery_method === 'delivery';
+        $delivery_method_title = $isDelivery ? "Доставка" : "Самовывоз";
         $payment_method_title = match($orderArray['payment']) {
             'cash' => "При получении",
             'bepaid' => "Bepaid (Банковская карта)",
@@ -563,9 +574,9 @@ class OrderService
             'email' => $orderArray['email'] ?? '',
             'status_title' => 'Обработка',
             'created_at' => now()->format('Y-m-d H:i:s'),
-            'pharmacy_name' => $pharmacy->pagetitle ?? 'Unknown Pharmacy',
-            'pharmacy_id' => $pharmacy->pharmacy_id ?? '',
-            'address' => $pharmacy->address ?? '',
+            'pharmacy_name' => $pharmacy?->pagetitle ?? ($isDelivery ? 'Доставка' : 'Аптека'),
+            'pharmacy_id' => $pharmacy?->pharmacy_id ?? $orderArray['pharmacy_id'],
+            'address' => $pharmacy?->address ?? ($isDelivery ? ($fullDeliveryAddress ?? '') : ''),
             'prices_sum' => round($calculations['sum'], 2),
             'old_prices_sum' => round($calculations['oldsum'], 2),
             'old_prices_sale_sum' => round($calculations['oldPricesSaleSum'],2),

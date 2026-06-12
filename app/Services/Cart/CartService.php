@@ -485,7 +485,13 @@ class CartService
                 $price = (float) ($characters['product_price_from'] ?? 0);
                 $priceOldRaw = (float) ($characters['product_price_from_old'] ?? 0);
                 $priceOld = $priceOldRaw > $price ? $priceOldRaw : $price;
-                $productId = (int) ($characters['product_id'] ?? 0);
+                $productId = (int) (
+                    $characters['product_id']
+                    ?? $characters['id']
+                    ?? $product['product_id']
+                    ?? $product['evo_site_content_id']
+                    ?? 0
+                );
 
                 if ($productId === 0) {
                     continue;

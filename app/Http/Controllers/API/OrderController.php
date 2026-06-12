@@ -50,8 +50,16 @@ class OrderController extends Controller
         }
     
 
-        // Создание заказа
-        $data = $this->OrderService->create($validator->validated());
+        try {
+            $data = $this->OrderService->create($validator->validated());
+        } catch (\Throwable $e) {
+            report($e);
+
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Ошибка при создании заказа.',
+            ], 500);
+        }
 
         if (!$data) {
             return response()->json([
