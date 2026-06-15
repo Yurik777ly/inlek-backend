@@ -1,0 +1,27 @@
+name: 🚀 Deploy API to prod server
+
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 🚚 Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: dev344
+
+      - name: 🚀 Upload files to server
+        uses: easingthemes/ssh-deploy@main
+        with:
+          ssh_private_key: ${{ secrets.TEST_KEY }}
+          remote_host: ${{ secrets.TEST_HOST }}
+          remote_user: ${{ secrets.TEST_USER }}
+          source: "./"
+          target: "/var/www/www-root/data/www/deploy-mob"
+          args: "-rlgoDzvc"
+          exclude: |
+            /.git
+            /.github
