@@ -4,7 +4,8 @@ namespace App\Console\Commands\Firebase;
 
 use App\Models\OrderStatusChange;
 use App\Models\OrderStatusNotification;
-
+use App\Services\Firebase\FirebaseService;
+use App\Services\Order\OrderStatusChangeService;
 
 class CheckUpdatedOrderStatusCommand extends FirebaseCommand
 {
@@ -12,56 +13,83 @@ class CheckUpdatedOrderStatusCommand extends FirebaseCommand
 
     protected $description = 'Проверить, изменились ли статусы у заказов. Если да, отправить уведомление.';
 
-    const TITLE_MSG = 'Inlek. Инфорамция о заказе'; 
+    const TITLE_MSG = 'Inlek. Информация о заказе';
     const DEFAULT_MSG = 'Ваш заказ в работе.';
-    const AVAITING_DAYS = 1; 
+    const AVAITING_DAYS = 1;
 
-  
+    public function __construct(
+        FirebaseService $firebaseService,
+        private readonly OrderStatusChangeService $orderStatusChangeService,
+    ) {
+        parent::__construct($firebaseService);
+    }
+
     public function handle()
-    { 
-        $updatedOrders = OrderStatusChange::with('user')
+    {
+        $synced = $this->orderStatusChangeService->syncFromOrderHistory();
+        if ($synced > 0) {
+            $this->info("Synced {$synced} status changes from order history.");
+        }
+
+        $pendingChanges = OrderStatusChange::with('user')
             ->whereNull('updated_at')
-            ->get(['order_id', 'new_status_id', 'old_status_id', 'id', 'user_id', 'updated_at']);
+            ->where('created_at', '>=', now()->subDay())
+            ->orderBy('id')
+            ->get();
 
         $sentCount = 0;
-      
-        if ($updatedOrders->count() > 0) {
 
-            foreach ($updatedOrders as $order) {
-                if($order->user) {
+        foreach ($pendingChanges as $change) {
+            $fcmToken = $this->orderStatusChangeService->resolveFcmToken($change->user);
 
-                    $notification = OrderStatusNotification::where('status_id', '=', $order->new_status_id)
-                                                           ->get('text')->first();
-                    if($notification) {
-                        if ($order->new_status_id == 3) {
-                            $notification = $notification->text. ' '. now()->addDays(self::AVAITING_DAYS)->format('d.m.Y');
-                        } else {
-                            $notification = $notification->text;
-                        }
-                        $this->info($notification);
-                        $result = $this->firebaseService->sendToDevice(
-                            $order->user->fcm_token,
-                                [
-                                    'title' => self::TITLE_MSG,
-                                    'body'  => $notification ? $notification : self::DEFAULT_MSG,
-                                ]
-                            );
-                        if ($result['success']) {
-                            $order->updated_at = now();
-                            $order->save();
-                            $sentCount++;
-                        } else {
-                            $this->info('Error for number '. $order->user->phone .' ' . $result['error']); 
-                        }
-                    }
-
-                }
-        
+            if (!$fcmToken) {
+                $this->warn("Skip order #{$change->order_id}: FCM token not found for user #{$change->user_id}");
+                $change->updated_at = now();
+                $change->save();
+                continue;
             }
-            
+
+            $notification = OrderStatusNotification::query()
+                ->where('status_id', $change->new_status_id)
+                ->value('text');
+
+            if (empty($notification)) {
+                $this->warn("Skip order #{$change->order_id}: no push text for status {$change->new_status_id}");
+                $change->updated_at = now();
+                $change->save();
+                continue;
+            }
+
+            if ((int) $change->new_status_id === 3) {
+                $body = $notification . ' ' . now()->addDays(self::AVAITING_DAYS)->format('d.m.Y');
+            } else {
+                $body = $notification;
+            }
+
+            $result = $this->firebaseService->sendToDevice(
+                $fcmToken,
+                [
+                    'title' => self::TITLE_MSG,
+                    'body' => $body,
+                ],
+                [
+                    'order_id' => (string) $change->order_id,
+                    'status_id' => (string) $change->new_status_id,
+                    'type' => 'order_status',
+                ]
+            );
+
+            if ($result['success']) {
+                $change->updated_at = now();
+                $change->save();
+                $sentCount++;
+                $this->info("Sent push for order #{$change->order_id}, status {$change->new_status_id}");
+            } else {
+                $phone = $change->user?->phone ?? 'unknown';
+                $this->error("Push failed for {$phone}: " . ($result['error'] ?? 'unknown error'));
+            }
         }
 
         $this->info("Sent {$sentCount} status notifications.");
-       
     }
 }

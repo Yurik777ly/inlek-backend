@@ -395,24 +395,24 @@ class CartService
         return $earthRadius * $c;
     }
 
-    public function getQuantity(int $productId, int $pharmacyId = null): float
+    public function getQuantity(int $productId, ?int $pharmacyId = null): float
     {
-        $offers = $this->evoOffers
-            ->query()
-            ->where('product_id', $productId)
-            ->when($pharmacyId, fn ($q) => $q
-                ->where(fn ($query) => $query
-                    ->where('pharmacy_id', $pharmacyId)
-                    ->orWhere('pharmacy_id', PharmaciesView::PHARMACY_ID_FOR_DELIVERY)
-                )
-            )
-            ->get(['stock_count']);
-        $offers = $offers->sortBy('stock_count', SORT_NATURAL);
+        $deliveryPharmacyId = PharmaciesView::PHARMACY_ID_FOR_DELIVERY;
 
-        if (count($offers) > 0) {
-            return (float) $offers->last()->stock_count;
+        $query = DB::table('offer_cache')
+            ->where('product_id', $productId)
+            ->where('stock_count', '>', 0);
+
+        // Для доставки и добавления без выбранной аптеки — максимум по реальным аптекам.
+        if ($pharmacyId && (int) $pharmacyId !== $deliveryPharmacyId) {
+            $query->where('pharmacy_id', $pharmacyId);
+        } else {
+            $query->where('pharmacy_id', '<>', $deliveryPharmacyId);
         }
-        return 0;
+
+        $maxStock = $query->max('stock_count');
+
+        return (float) ((int) ($maxStock ?? 0));
     }
 
     public function getCartDetailedWithoutChoosenPharm(CartDetailedDTO $cartDTO)

@@ -4,7 +4,7 @@ BEGIN
     WITH RECURSIVE category_tree AS (
         SELECT category_id, parent, pagetitle, alias, category_advertisement, image
         FROM evo_category_view
-        WHERE category_id = input_category_id  -- Начинаем с указанной категории
+        WHERE category_id = input_category_id
 
         UNION ALL
 
@@ -12,10 +12,13 @@ BEGIN
         FROM evo_category_view c
                  INNER JOIN category_tree ct ON c.parent = ct.category_id
     )
-    SELECT distinct
-        ecpv.form
+    SELECT DISTINCT
+        pc.release_form AS form
     FROM category_tree ct
-             inner join evo_category_product_view ecpv on (ct.category_id = ecpv.category_id)
-    where ecpv.form is not null
-    order by ecpv.form;
+             INNER JOIN evo_category_product_view ecpv ON ct.category_id = ecpv.category_id
+             INNER JOIN product_cache pc ON pc.product_id = ecpv.product_id
+    WHERE pc.release_form IS NOT NULL
+      AND TRIM(pc.release_form) != ''
+      AND pc.published = 1
+    ORDER BY pc.release_form;
 END;

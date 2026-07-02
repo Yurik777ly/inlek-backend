@@ -9,10 +9,11 @@ class OrderStatusChange extends Model
    protected $table = "order_status_changes";
 
    	protected $fillable = [
-		"old_status_id",
-        "new_statu_id",
-        "order_id",
-        "user_id",
+		'old_status_id',
+        'new_status_id',
+        'order_id',
+        'user_id',
+        'history_id',
 	];
 
     public function user()

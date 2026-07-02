@@ -38,12 +38,18 @@ class UserService
                 'phone' => 'номер телефона занят',
             ]);
         } catch (ModelNotFoundException) {
+            $fcmToken = $authDTO->fcm_token;
+            if (empty($fcmToken)) {
+                $sms = \App\Models\SMS::query()->where('phone', $authDTO->phone)->first();
+                $fcmToken = $sms?->fcm_token;
+            }
+
             $this->User->password = Hash::make($authDTO->password);
             $this->User->phone = $authDTO->phone;
             $this->User->accept_policy = true;
             $this->User->status_notifications = true;
             $this->User->name = 'Пользователь';
-            $this->User->fcm_token = $authDTO->fcm_token;
+            $this->User->fcm_token = $fcmToken;
             $this->User->save();
         }
 

@@ -5,11 +5,10 @@ namespace App\Services\SMS;
 use App\Http\Dto\Auth\AuthDTO;
 use App\Models\SMS;
 use App\Providers\SMS\SMSProvider;
-use Faker\Generator;
 use DateTime;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use DateMalformedStringException;
-use stdClass;
+
 class SMSService
 {
 
@@ -19,11 +18,15 @@ class SMSService
     ) {}
 
     /**
-     * Generate SMS code
+     * Generate SMS code without Faker (dev-only package is absent on prod).
      */
     public static function generateCode(): string
     {
-        return (string) app(Generator::class)->randomNumber((int)env('SMS_DIGITS_QTY', 4), true);
+        $digits = max(4, min(8, (int) env('SMS_DIGITS_QTY', 4)));
+        $min = 10 ** ($digits - 1);
+        $max = (10 ** $digits) - 1;
+
+        return (string) random_int($min, $max);
     }
 
     public function sendSMS(AuthDTO $authDTO): array

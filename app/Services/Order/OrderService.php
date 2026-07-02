@@ -15,6 +15,7 @@ use App\Models\EVO\EvoCommerceOrders;
 use App\Models\EVO\EvoCommerceOrderProducts;
 use App\Models\EVO\EvoCommerceOrderHistory;
 use App\Models\EVO\EvoCommerceOrderPayments;
+use App\Models\EVO\EvoSystemSetting;
 
 use App\Services\Payment\Bepaid;
 use App\Services\Payment\Oplati;
@@ -49,6 +50,7 @@ const SELF_GET_TITLES = [
 class OrderService
 {
     const AWAITING_PAY_STATUS = 10;
+    private const DELIVERY_PRODUCT_ID = 18697039;
     private array $productCache = [];
 
     public function __construct(
@@ -140,8 +142,16 @@ class OrderService
                 // Рассчитываем суммы заказа
                 $orderCalculations = $this->calculateOrderTotals($cartData, $orderArray);
 
+                if ($orderCalculations['deliverySum'] > 0) {
+                    $cartData['orderProducts'][] = $this->buildDeliveryOrderProduct(
+                        $orderCalculations['deliverySum'],
+                        count($cartData['orderProducts']) + 1,
+                        (int) $orderArray['pharmacy_id'],
+                    );
+                }
+
                 // Создаем заказ
-                $orderId = $this->createOrder($orderArray, $orderCalculations);
+                $orderId = $this->createOrder($orderArray, $orderCalculations, $cartData['orderProducts']);
 
                 // Сохраняем товары заказа
                 $this->saveOrderProducts($orderId, $cartData['orderProducts']);
@@ -151,9 +161,9 @@ class OrderService
 
                 // Создаем запись в истории
                 $this->createOrderHistory($orderId);
-                
-                // Обновляем статус заказа
-                $this->updateOrderStatus($orderId, 2);
+
+                // Статус остаётся 1 («Новый») — так же, как у заказов с сайта.
+                // 1С забирает заказы с id_status=1 и сам переводит их в «В обработке».
 
                 // Возвращаем ответ
                 return $this->formatOrderResponse($orderId, $orderArray, $orderCalculations,  $cartData['orderProducts']);
@@ -204,6 +214,10 @@ class OrderService
 
         $productsFullInfo = $this->getProductsInfo($productIds);
 
+        $orderPharmacyId = (int) $orderArray['pharmacy_id'];
+        $isDeliveryOrder = $isDeliveryPharmacy
+            || ($orderArray['delivery'] ?? '') === 'delivery';
+
         $position = 1;
 
         $sum = 0;
@@ -228,8 +242,30 @@ class OrderService
                 }
 
                 $productInfo = $product['product_info'] ?? [];
+                $productId = (int) $product['product_id'];
+                $oneCMeta = $this->resolveProductOneCMeta($productId, $orderPharmacyId, $isDeliveryOrder);
+                $offer = $oneCMeta['offer'];
+                $productUid1c = $oneCMeta['product_uid_1c'];
+                $pharmacyUid1c = $oneCMeta['pharmacy_uid'];
+                $resolvedPharmacyId = $oneCMeta['pharmacy_id'];
+                $offerId = (int) ($offer?->id ?? 0);
+
+                if ($productUid1c === '' || $pharmacyUid1c <= 0) {
+                    Log::warning('1C metadata missing for mobile order product', [
+                        'product_id' => $productId,
+                        'order_pharmacy_id' => $orderPharmacyId,
+                        'resolved_pharmacy_id' => $resolvedPharmacyId,
+                        'product_uid_1c' => $productUid1c,
+                        'pharmacy_uid_1c' => $pharmacyUid1c,
+                    ]);
+                }
+
+                $expirationDate = !empty($offer?->expiration_date)
+                    ? trim(str_replace('Годен до ', '', (string) $offer->expiration_date)) ?: null
+                    : null;
+
                 $orderProducts[] = [
-                    'product_id' => $product['product_id'],
+                    'product_id' => $productId,
                     'title' => $productInfo['pagetitle']
                         ?? $productInfo['product_title']
                         ?? $productInfo['name']
@@ -238,14 +274,20 @@ class OrderService
                     'count' => (int)$quantity,
                     'requested_quantity' => (int)$product['requested_quantity'],
                     'options' => json_encode([
-                        "pharmacy_id" => $orderArray['pharmacy_id'],
-                        "iscancellations" => false,
-                        "number_1c" => 0,
-                        "price" => $price,
-                        "price_old" => $price_old,
-                        "image" => $productCharachters['image'] ?? null,
-                        "promocodes" => $productPromocodes ?? [],
-                    ]),
+                        'id' => $offerId,
+                        'id_1c' => $productUid1c,
+                        'pharmacy_uid_1c' => $pharmacyUid1c,
+                        'offer_id' => $offerId,
+                        'pharmacy_id' => $resolvedPharmacyId,
+                        'product_id' => $productId,
+                        'iscancellations' => false,
+                        'number_1c' => 0,
+                        'price' => $price,
+                        'price_old' => $price_old,
+                        'expiration_date' => $expirationDate,
+                        'image' => $productCharachters['image'] ?? null,
+                        'promocodes' => $productPromocodes ?? [],
+                    ], JSON_UNESCAPED_UNICODE),
                     'meta' => json_encode([
                         'product_info' => $productCharachters,
                         'promocodes_info' => $productPromocodes,
@@ -373,58 +415,9 @@ class OrderService
         }
     }
 
-    private function createOrder(array $orderArray, array $calculations): int
+    private function createOrder(array $orderArray, array $calculations, array $orderProducts = []): int
     {
-        $delivery_method = $orderArray['delivery'];
-        $delivery_method_title = ($orderArray['delivery'] == 'self') ? "Самовывоз" : "Доставка";
-
-        $payment_method = $orderArray['payment'];
-        $payment_method_title = match($orderArray['payment']) {
-            'cash' => "При получении",
-            'bepaid' => "Bepaid (Банковская карта)",
-            'oplati' => "Oplati",
-            'erip' => "ЕРИП",
-            default => $orderArray['payment']
-        };
-
-        $fields = json_encode([
-            "comment" => $orderArray['comment'] ?? '',
-            "agree" => true,
-            "city" => $orderArray['city'] ?? '',
-            "street" => $orderArray['address'] ?? '',
-            "entrance" => $orderArray['entrance'] ?? '',
-            "floor" => $orderArray['floor'] ?? '',
-            "apartment" => $orderArray['apartment'] ?? '',
-            "intercom" => $orderArray['intercom'] ?? '',
-            "delivery" => [
-                "id" => $delivery_method,
-                "title" => $delivery_method_title,
-                "city" => $orderArray['city'] ?? '',
-                "street" => $orderArray['address'] ?? '',
-                "entrance" => $orderArray['entrance'] ?? '',
-                "floor" => $orderArray['floor'] ?? '',
-                "apartment" => $orderArray['apartment'] ?? '',
-                "intercom" => $orderArray['intercom'] ?? '',
-            ],
-            "payment" => [
-                "id" => $payment_method,
-                "title" => $payment_method_title,
-                "caption" => ""
-            ],
-            "promocodes" => $orderArray['promocodes'] ?? [],
-            "sum" => [
-                "pricesSum" => $calculations['sum'],
-                "oldPricesSum" => $calculations['oldsum'],
-                "oldPricesSaleSum" => $calculations['oldPricesSaleSum'],
-                "promocodesDiscount" => $calculations['promocodesDiscount'],
-                "deliverySum" => $calculations['deliverySum'],
-                "totalSum" => $calculations['totalSum']
-            ],
-            "delivery_method" => $delivery_method,
-            "delivery_method_title" => $delivery_method_title,
-            "payment_method" => $payment_method,
-            "payment_method_title" => $payment_method_title
-        ]);
+        $fields = $this->buildOrderFields($orderArray, $calculations, $orderProducts);
 
         $order = new EvoCommerceOrders();
         $order->customer_id = auth()->user()->id;
@@ -572,7 +565,7 @@ class OrderService
             'name' => $orderArray['first_name'] . ' ' . $orderArray['last_name'],
             'phone' => $orderArray['phone'],
             'email' => $orderArray['email'] ?? '',
-            'status_title' => 'Обработка',
+            'status_title' => 'Новый',
             'created_at' => now()->format('Y-m-d H:i:s'),
             'pharmacy_name' => $pharmacy?->pagetitle ?? ($isDelivery ? 'Доставка' : 'Аптека'),
             'pharmacy_id' => $pharmacy?->pharmacy_id ?? $orderArray['pharmacy_id'],
@@ -1030,5 +1023,317 @@ class OrderService
                 return [];
             }
         });
+    }
+
+    /**
+     * Данные для обмена с 1С по одному товару.
+     */
+    private function resolveProductOneCMeta(int $productId, int $orderPharmacyId, bool $isDeliveryOrder): array
+    {
+        $deliveryPharmacyId = PharmaciesView::PHARMACY_ID_FOR_DELIVERY;
+
+        $productUid1c = (string) DB::table('evo_site_tmplvar_contentvalues as tvc')
+            ->join('evo_site_tmplvars as tv', 'tv.id', '=', 'tvc.tmplvarid')
+            ->where('tv.name', 'product_uid_1c')
+            ->where('tvc.contentid', $productId)
+            ->value('tvc.value');
+
+        $pharmacyId = $orderPharmacyId;
+        if ($isDeliveryOrder || $orderPharmacyId === $deliveryPharmacyId) {
+            // Для доставки в 1С всегда используем виртуальную аптеку доставки (uid_1c = 64).
+            $pharmacyId = $deliveryPharmacyId;
+        } else {
+            $pharmacyId = (int) DB::table('offer_cache')
+                ->where('product_id', $productId)
+                ->where('pharmacy_id', '<>', $deliveryPharmacyId)
+                ->where('stock_count', '>', 0)
+                ->orderByDesc('stock_count')
+                ->orderBy('price')
+                ->value('pharmacy_id');
+        }
+
+        if ($pharmacyId <= 0) {
+            return [
+                'product_uid_1c' => $productUid1c,
+                'pharmacy_id' => 0,
+                'pharmacy_uid' => 0,
+                'offer' => null,
+            ];
+        }
+
+        $pharmacyUid = (int) DB::table('evo_site_tmplvar_contentvalues as tvc')
+            ->join('evo_site_tmplvars as tv', 'tv.id', '=', 'tvc.tmplvarid')
+            ->where('tv.name', 'ID_punkt')
+            ->where('tvc.contentid', $pharmacyId)
+            ->value('tvc.value');
+
+        $offer = DB::table('evo_offers')
+            ->where('product_id', $productId)
+            ->where('pharmacy_id', $pharmacyId)
+            ->where('price', '>', 0)
+            ->orderByRaw('CAST(COALESCE(NULLIF(TRIM(stock_count), ""), "0") AS DECIMAL(12,3)) DESC')
+            ->first(['id', 'product_id', 'pharmacy_id', 'uid', 'expiration_date', 'price']);
+
+        if ($productUid1c === '' && $offer && !empty($offer->uid) && $pharmacyUid > 0) {
+            $productUid1c = $this->extractProductUidFromOfferUid((string) $offer->uid, $pharmacyUid);
+        }
+
+        return [
+            'product_uid_1c' => $productUid1c,
+            'pharmacy_id' => $pharmacyId,
+            'pharmacy_uid' => $pharmacyUid,
+            'offer' => $offer,
+        ];
+    }
+
+    private function extractProductUidFromOfferUid(string $offerUid, int $pharmacyUid): string
+    {
+        $suffix = '-' . $pharmacyUid;
+        if ($pharmacyUid > 0 && str_ends_with($offerUid, $suffix)) {
+            return substr($offerUid, 0, -strlen($suffix));
+        }
+
+        return '';
+    }
+
+    private function buildDeliveryOrderProduct(float $deliveryPrice, int $position, int $deliveryPharmacyId): array
+    {
+        $oneCMeta = $this->resolveProductOneCMeta(
+            self::DELIVERY_PRODUCT_ID,
+            $deliveryPharmacyId,
+            false,
+        );
+
+        $offerId = (int) ($oneCMeta['offer']?->id ?? 0);
+        $price = round($deliveryPrice, 2);
+
+        return [
+            'product_id' => self::DELIVERY_PRODUCT_ID,
+            'title' => 'Доставка',
+            'price' => $price,
+            'count' => 1,
+            'requested_quantity' => 1,
+            'options' => json_encode([
+                'id' => $offerId,
+                'id_1c' => $oneCMeta['product_uid_1c'],
+                'pharmacy_uid_1c' => $oneCMeta['pharmacy_uid'],
+                'offer_id' => $offerId,
+                'pharmacy_id' => $deliveryPharmacyId,
+                'product_id' => self::DELIVERY_PRODUCT_ID,
+                'iscancellations' => false,
+                'number_1c' => 0,
+                'price' => $price,
+                'price_old' => $price,
+                'expiration_date' => null,
+                'image' => null,
+                'promocodes' => [],
+            ], JSON_UNESCAPED_UNICODE),
+            'meta' => json_encode([], JSON_UNESCAPED_UNICODE),
+            'position' => $position,
+            'image' => null,
+            'promocodes' => [],
+            'product_info' => null,
+        ];
+    }
+
+    private function resolveDeliveryId(array $orderArray): string
+    {
+        if (($orderArray['delivery'] ?? '') !== 'delivery') {
+            return 'self';
+        }
+
+        return match ($orderArray['delivery_zone'] ?? '') {
+            'green' => 'green',
+            'yellow' => 'yellow',
+            default => 'delivery',
+        };
+    }
+
+    private function resolveDeliveryTitle(string $deliveryId): string
+    {
+        return match ($deliveryId) {
+            'self' => 'Самовывоз',
+            'green' => 'Зелёная зона доставки',
+            'yellow' => 'Жёлтая зона доставки',
+            default => 'Доставка',
+        };
+    }
+
+    private function resolvePaymentTitle(string $paymentMethod): string
+    {
+        return match ($paymentMethod) {
+            'cash' => 'При получении',
+            'bepaid' => 'Bepaid (Банковская карта)',
+            'oplati' => 'Oplati',
+            'erip' => 'ЕРИП',
+            default => $paymentMethod,
+        };
+    }
+
+    private function resolvePaymentInfo(string $paymentMethod): array
+    {
+        $payments = $this->getCartPaymentsConfig();
+        $payment = collect($payments)->firstWhere('id', $paymentMethod);
+
+        if ($payment) {
+            return [
+                'payment_code' => (int) ($payment['payment_code'] ?? 0),
+                'online' => ($payment['online'] ?? false) === true || ($payment['online'] ?? '') === 'yes',
+            ];
+        }
+
+        return [
+            'payment_code' => match ($paymentMethod) {
+                'cash' => 1,
+                'bepaid' => 2,
+                'oplati' => 3,
+                'erip' => 4,
+                default => 0,
+            },
+            'online' => in_array($paymentMethod, ['bepaid', 'oplati', 'erip'], true),
+        ];
+    }
+
+    private function getCartPaymentsConfig(): array
+    {
+        return Cache::remember('site_cart_payments', 3600, function () {
+            try {
+                $raw = EvoSystemSetting::query()
+                    ->where('setting_name', 'site_cart_payments')
+                    ->value('setting_value');
+
+                if (empty($raw)) {
+                    return [];
+                }
+
+                $values = json_decode((string) $raw, true);
+                if (!is_array($values)) {
+                    return [];
+                }
+
+                $payments = [];
+                foreach ($values as $value) {
+                    if (($value['type'] ?? '') !== 'row' || empty($value['items'])) {
+                        continue;
+                    }
+
+                    $item = [];
+                    foreach ($value['items'] as $fieldKey => $field) {
+                        $item[$fieldKey] = $field['value'] ?? null;
+                    }
+
+                    $item['online'] = ($item['online'] ?? 'no') === 'yes';
+                    $payments[] = $item;
+                }
+
+                return $payments;
+            } catch (\Exception $e) {
+                Log::warning('Не удалось загрузить site_cart_payments', ['error' => $e->getMessage()]);
+
+                return [];
+            }
+        });
+    }
+
+    private function buildOrderDataItems(array $orderProducts): array
+    {
+        $items = [];
+
+        foreach ($orderProducts as $product) {
+            $options = $this->safeJsonDecode($product['options'] ?? null) ?? [];
+
+            $items[] = [
+                'id' => ($options['id_1c'] ?? '') . '-' . ($options['pharmacy_uid_1c'] ?? 0),
+                'productId' => (int) ($product['product_id'] ?? 0),
+                'offerId' => (int) ($options['offer_id'] ?? $options['id'] ?? 0),
+                'count' => (int) ($product['count'] ?? 0),
+                'price' => round((float) ($product['price'] ?? 0), 2),
+            ];
+        }
+
+        return $items;
+    }
+
+    private function buildOrderFields(array $orderArray, array $calculations, array $orderProducts): string
+    {
+        $deliveryId = $this->resolveDeliveryId($orderArray);
+        $deliveryTitle = $this->resolveDeliveryTitle($deliveryId);
+        $paymentMethod = (string) $orderArray['payment'];
+        $paymentTitle = $this->resolvePaymentTitle($paymentMethod);
+        $paymentInfo = $this->resolvePaymentInfo($paymentMethod);
+
+        $sum = [
+            'pricesSum' => $calculations['sum'],
+            'oldPricesSum' => $calculations['oldsum'],
+            'oldPricesSaleSum' => $calculations['oldPricesSaleSum'],
+            'promocodesDiscount' => $calculations['promocodesDiscount'],
+            'deliverySum' => $calculations['deliverySum'],
+            'totalSum' => $calculations['totalSum'],
+            'delivery' => $calculations['deliverySum'],
+            'total' => $calculations['totalSum'],
+        ];
+
+        $delivery = [
+            'id' => $deliveryId,
+            'title' => $deliveryTitle,
+            'city' => $orderArray['city'] ?? '',
+            'street' => $orderArray['address'] ?? '',
+            'house' => '',
+            'entrance' => $orderArray['entrance'] ?? '',
+            'floor' => $orderArray['floor'] ?? '',
+            'apartment' => $orderArray['apartment'] ?? '',
+            'intercom' => $orderArray['intercom'] ?? '',
+            'deliveryComment' => $orderArray['comment'] ?? '',
+            'price' => $calculations['deliverySum'],
+        ];
+
+        $payment = [
+            'id' => $paymentMethod,
+            'title' => $paymentTitle,
+            'caption' => '',
+            'payment_code' => $paymentInfo['payment_code'],
+            'online' => $paymentInfo['online'],
+        ];
+
+        $contact = [
+            'name' => trim(($orderArray['first_name'] ?? '') . ' ' . ($orderArray['last_name'] ?? '')),
+            'phone' => $orderArray['phone'] ?? '',
+            'email' => $orderArray['email'] ?? '',
+            'comment' => $orderArray['comment'] ?? '',
+        ];
+
+        $orderData = [
+            'items' => $this->buildOrderDataItems($orderProducts),
+            'delivery' => $delivery,
+            'payment' => $payment,
+            'contact' => $contact,
+            'sum' => $sum,
+            'promocodes' => $orderArray['promocodes'] ?? [],
+            'from1C' => false,
+            'payment_code' => $paymentInfo['payment_code'],
+        ];
+
+        return json_encode([
+            'comment' => $orderArray['comment'] ?? '',
+            'agree' => true,
+            'city' => $orderArray['city'] ?? '',
+            'street' => $orderArray['address'] ?? '',
+            'entrance' => $orderArray['entrance'] ?? '',
+            'floor' => $orderArray['floor'] ?? '',
+            'apartment' => $orderArray['apartment'] ?? '',
+            'intercom' => $orderArray['intercom'] ?? '',
+            'delivery' => $delivery,
+            'payment' => $payment,
+            'promocodes' => $orderArray['promocodes'] ?? [],
+            'sum' => $sum,
+            'delivery_method' => $deliveryId,
+            'delivery_method_title' => $deliveryTitle,
+            'payment_method' => $paymentMethod,
+            'payment_method_title' => $paymentTitle,
+            'payment_code' => $paymentInfo['payment_code'],
+            'is_paid' => false,
+            'online_payment_price' => 0,
+            'orderData' => $orderData,
+        ], JSON_UNESCAPED_UNICODE);
     }
 }

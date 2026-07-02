@@ -21,15 +21,17 @@ class FirebaseService
     public function sendToDevice(string $deviceToken, array $notificationData, array $data = [])
     {
         try {
+            $data = array_merge([
+                'title' => $notificationData['title'] ?? '',
+                'body' => $notificationData['body'] ?? '',
+            ], $data);
+
             $message = CloudMessage::withTarget('token', $deviceToken)
                 ->withNotification(Notification::create(
                     $notificationData['title'] ?? '',
                     $notificationData['body'] ?? ''
-                ));
-
-            if (!empty($data)) {
-                $message = $message->withData($data);
-            }
+                ))
+                ->withData($data);
 
             $response = $this->messaging->send($message);
         

@@ -10,6 +10,9 @@ class CatalogCacheRefresher
     /** @var array<int, int>|null */
     protected ?array $lastTouchedProductIds = null;
 
+    /** @var (callable(string): void)|null */
+    protected $progressCallback = null;
+
     public function __construct(
         protected readonly CatalogTmplvarResolver $tmplvars,
         protected readonly CatalogCacheRefreshState $refreshState,
@@ -17,11 +20,17 @@ class CatalogCacheRefresher
 
     /**
      * @param  array<int, string>|null  $only
+     * @param  (callable(string): void)|null  $onProgress
      * @return array<string, int>
      */
-    public function refresh(?array $only = null, bool $truncate = true, bool $incremental = false): array
-    {
+    public function refresh(
+        ?array $only = null,
+        bool $truncate = true,
+        bool $incremental = false,
+        ?callable $onProgress = null,
+    ): array {
         $this->lastTouchedProductIds = null;
+        $this->progressCallback = $onProgress;
 
         $steps = [
             'pharmacies' => fn () => $this->refreshPharmacies($truncate),
@@ -57,10 +66,23 @@ class CatalogCacheRefresher
         $counts = [];
 
         foreach ($steps as $name => $callback) {
+            $this->progress("→ {$name}...");
+            $stepStarted = microtime(true);
             $counts[$name] = $callback();
+            $stepElapsed = round(microtime(true) - $stepStarted, 2);
+            $this->progress("✓ {$name}: {$counts[$name]} строк за {$stepElapsed} с");
         }
 
+        $this->progressCallback = null;
+
         return $counts;
+    }
+
+    protected function progress(string $message): void
+    {
+        if ($this->progressCallback !== null) {
+            ($this->progressCallback)($message);
+        }
     }
 
     public function refreshPharmacies(bool $truncate = true): int
@@ -613,26 +635,27 @@ class CatalogCacheRefresher
     public function refreshProductRelations(bool $truncate = true): int
     {
         if ($truncate) {
+            $this->progress('  relations: очистка таблиц...');
             $this->truncateTable('product_brand_cache');
             $this->truncateTable('product_similar_cache');
             $this->truncateTable('product_related_cache');
             $this->truncateTable('product_category_products_cache');
         }
 
+        $this->progress('  relations: агрегация минимальных цен из offer_cache...');
+        $this->ensureProductOfferPricesTempTable();
+
+        $relationJson = $this->relationProductJsonObjectSql();
+
+        $this->progress('  relations: product_brand_cache...');
         $brandCount = DB::affectingStatement(<<<SQL
             INSERT INTO product_brand_cache (product_id, brand_products_json, updated_at)
             SELECT
                 p1.product_id,
                 (
-                    SELECT JSON_ARRAYAGG(
-                        JSON_OBJECT(
-                            'product_id', p2.product_id,
-                            'pagetitle', p2.pagetitle,
-                            'image', p2.image,
-                            'product_price_from', p2.product_price_from
-                        )
-                    )
+                    SELECT JSON_ARRAYAGG({$relationJson})
                     FROM product_cache p2
+                    LEFT JOIN tmp_product_offer_prices ocp ON ocp.product_id = p2.product_id
                     WHERE p2.brand = p1.brand
                       AND p2.brand IS NOT NULL
                       AND p2.brand <> ''
@@ -644,22 +667,18 @@ class CatalogCacheRefresher
             FROM product_cache p1
             WHERE p1.brand IS NOT NULL AND p1.brand <> ''
         SQL);
+        $this->progress("  relations: product_brand_cache — {$brandCount} строк");
 
+        $this->progress('  relations: product_related_cache...');
         $relatedCount = DB::affectingStatement(<<<SQL
             INSERT INTO product_related_cache (product_id, related_products_json, updated_at)
             SELECT
                 pcc.product_id,
                 (
-                    SELECT JSON_ARRAYAGG(
-                        JSON_OBJECT(
-                            'product_id', p2.product_id,
-                            'pagetitle', p2.pagetitle,
-                            'image', p2.image,
-                            'product_price_from', p2.product_price_from
-                        )
-                    )
+                    SELECT JSON_ARRAYAGG({$relationJson})
                     FROM product_category_cache pcc2
                     INNER JOIN product_cache p2 ON p2.product_id = pcc2.product_id AND p2.published = 1
+                    LEFT JOIN tmp_product_offer_prices ocp ON ocp.product_id = p2.product_id
                     WHERE pcc2.category_id = pcc.category_id
                       AND pcc2.product_id <> pcc.product_id
                     LIMIT 20
@@ -671,22 +690,18 @@ class CatalogCacheRefresher
                 GROUP BY product_id
             ) pcc
         SQL);
+        $this->progress("  relations: product_related_cache — {$relatedCount} строк");
 
+        $this->progress('  relations: product_category_products_cache...');
         $categoryProductsCount = DB::affectingStatement(<<<SQL
             INSERT INTO product_category_products_cache (product_id, category_products_json, updated_at)
             SELECT
                 pcc.product_id,
                 (
-                    SELECT JSON_ARRAYAGG(
-                        JSON_OBJECT(
-                            'product_id', p2.product_id,
-                            'pagetitle', p2.pagetitle,
-                            'image', p2.image,
-                            'product_price_from', p2.product_price_from
-                        )
-                    )
+                    SELECT JSON_ARRAYAGG({$relationJson})
                     FROM product_category_cache pcc2
                     INNER JOIN product_cache p2 ON p2.product_id = pcc2.product_id AND p2.published = 1
+                    LEFT JOIN tmp_product_offer_prices ocp ON ocp.product_id = p2.product_id
                     WHERE pcc2.category_id IN (
                         SELECT category_id FROM product_category_cache WHERE product_id = pcc.product_id
                     )
@@ -698,9 +713,52 @@ class CatalogCacheRefresher
                 SELECT DISTINCT product_id FROM product_category_cache
             ) pcc
         SQL);
+        $this->progress("  relations: product_category_products_cache — {$categoryProductsCount} строк");
+
+        DB::statement('DROP TEMPORARY TABLE IF EXISTS tmp_product_offer_prices');
 
         // similar_products заполняется через Rees46 в runtime; оставляем пустую таблицу.
         return $brandCount + $relatedCount + $categoryProductsCount;
+    }
+
+    protected function ensureProductOfferPricesTempTable(): void
+    {
+        DB::statement('DROP TEMPORARY TABLE IF EXISTS tmp_product_offer_prices');
+
+        DB::statement(<<<SQL
+            CREATE TEMPORARY TABLE tmp_product_offer_prices (
+                product_id BIGINT UNSIGNED NOT NULL PRIMARY KEY,
+                min_price DECIMAL(12,2) DEFAULT NULL,
+                min_price_old DECIMAL(12,2) DEFAULT NULL
+            )
+        SQL);
+
+        DB::statement(<<<SQL
+            INSERT INTO tmp_product_offer_prices (product_id, min_price, min_price_old)
+            SELECT
+                product_id,
+                MIN(price) AS min_price,
+                MIN(NULLIF(price_old, 0)) AS min_price_old
+            FROM offer_cache
+            WHERE stock_count > 0
+              AND price > 0
+            GROUP BY product_id
+        SQL);
+    }
+
+    protected function relationProductJsonObjectSql(): string
+    {
+        return <<<'SQL'
+            JSON_OBJECT(
+                'product_id', p2.product_id,
+                'pagetitle', p2.pagetitle,
+                'image', p2.image,
+                'product_price_from', COALESCE(NULLIF(p2.product_price_from, 0), ocp.min_price),
+                'product_price_from_old', COALESCE(NULLIF(p2.product_price_from_old, 0), ocp.min_price_old),
+                'product_price_from_percent', p2.product_price_from_percent,
+                'is_available', p2.is_available
+            )
+        SQL;
     }
 
     public function refreshProductCharactersJson(): int

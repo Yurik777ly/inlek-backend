@@ -75,6 +75,7 @@ class ContentService
                 'molodechno'  => ['lat' => 54.3312,   'lng' => 26.8422],
                 'baranovichi' => ['lat' => 53.1328,   'lng' => 26.0144],
                 'mozyr'       => ['lat' => 52.0458,   'lng' => 29.2516],
+                'polock'      => ['lat' => 55.4879,   'lng' => 28.7856],
             ];
 
             $alias = $city->alias;

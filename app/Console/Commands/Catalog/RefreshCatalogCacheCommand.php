@@ -40,10 +40,18 @@ class RefreshCatalogCacheCommand extends Command
         $mode = $incremental ? 'инкрементально' : 'полностью';
         $scope = $only ? implode(', ', $only) : 'полный цикл';
         $this->info("Обновление кэша каталога ({$mode}, {$scope})...");
+        $this->newLine();
 
         $started = microtime(true);
-        $counts = $refresher->refresh($only, $truncate, $incremental);
+        $counts = $refresher->refresh(
+            $only,
+            $truncate,
+            $incremental,
+            fn (string $message) => $this->line($message),
+        );
         $elapsed = round(microtime(true) - $started, 2);
+
+        $this->newLine();
 
         $rows = [];
 

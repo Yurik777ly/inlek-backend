@@ -114,7 +114,19 @@ class ProductService
     public function getProductDetails(ProductDTO $productDto): ?array
     {
         $product = $this->productInfoViewJsonDetailed->query()->where('product_id', $productDto->productId)
-            ->get(['product_id','product_charachters','action_json','promocodes_json','categories_json', 'brand_products', 'related_products', 'category_products', 'instruction'])->first();
+            ->get([
+                'product_id',
+                'mnn',
+                'form',
+                'product_charachters',
+                'action_json',
+                'promocodes_json',
+                'categories_json',
+                'brand_products',
+                'related_products',
+                'category_products',
+                'instruction',
+            ])->first();
         if ($product) {
             $categories = $product->categories_json ?? [];
             $categoryId = null;
@@ -125,16 +137,23 @@ class ProductService
             }
 
             try {
-                $product->similar_products = Rees46::getRecommendation($categoryId);
+                $similarProducts = Rees46::getRecommendation($categoryId);
             } catch (\Throwable) {
-                $product->similar_products = [];
+                $similarProducts = [];
             }
 
+            $characters = is_array($product->product_charachters) ? $product->product_charachters : [];
+            $mnn = trim((string) ($product->mnn ?? $characters['mnn'] ?? ''));
+            $form = trim((string) ($product->form ?? $characters['form'] ?? ''));
+
             $product = $product->toArray();
+            $product['analog_products'] = $this->getAnalogProducts($productDto->productId, $mnn, $form);
+            $product['related_products'] = $this->enrichRelationProducts($product['related_products'] ?? []);
+            $product['brand_products'] = $this->enrichRelationProducts($product['brand_products'] ?? []);
+            $product['similar_products'] = $this->enrichRelationProducts($similarProducts);
 
             $product['availability'] = 'absent';
-            if ($this->getAvailablePharmaciesCount( $productDto->productId) > 0)
-            {
+            if ($this->getAvailablePharmaciesCount($productDto->productId) > 0) {
                 $product['availability'] = 'part';
             }
         }
@@ -144,8 +163,55 @@ class ProductService
     public function getDailyProducts(): array
     {
         $daily = $this->DailyProductsView::with('productInfo:product_id,product_charachters,action_json,promocodes_json,categories_json,is_available')
-            ->get(['product_id'])->toArray();
-        return $daily;
+            ->get(['product_id'])
+            ->toArray();
+
+        if ($daily === []) {
+            return [];
+        }
+
+        $productIds = array_map(static fn (array $item) => (int) $item['product_id'], $daily);
+        $offerPrices = $this->loadMinOfferPrices($productIds);
+
+        return array_values(array_filter(array_map(function (array $item) use ($offerPrices) {
+            $info = $item['product_info'] ?? null;
+            if (!is_array($info)) {
+                return null;
+            }
+
+            $chars = $info['product_charachters'] ?? [];
+            if (is_string($chars)) {
+                $chars = json_decode($chars, true) ?? [];
+            }
+            if (!is_array($chars)) {
+                $chars = [];
+            }
+
+            $productId = (int) $item['product_id'];
+            $price = (float) ($chars['product_price_from'] ?? 0);
+
+            if ($price <= 0 && $offerPrices->has($productId)) {
+                $offer = $offerPrices->get($productId);
+                $chars['product_price_from'] = round((float) $offer->min_price, 2);
+
+                $priceOld = (float) ($offer->min_price_old ?? 0);
+                if ($priceOld > $chars['product_price_from']) {
+                    $chars['product_price_from_old'] = round($priceOld, 2);
+                }
+            }
+
+            if ((float) ($chars['product_price_from'] ?? 0) <= 0) {
+                return null;
+            }
+
+            $info['product_charachters'] = $chars;
+            if (empty($info['is_available']) && $offerPrices->has($productId)) {
+                $info['is_available'] = 1;
+            }
+            $item['product_info'] = $info;
+
+            return $item;
+        }, $daily)));
     }
 
     public function getFilteredProducts(ProductDTO $productDto, int $perPage = 20, int $page = 1): LengthAwarePaginator
@@ -183,13 +249,13 @@ class ProductService
                 return $query->where('is_available', $productDto->available);
             })
             ->when(!empty($productDto->categoryId), function ($query) use ($productDto) {
-                // Добавляем условие EXISTS вместо JOIN
-                return $query->whereExists(function ($subQuery) use ($productDto) {
+                $categoryIds = $this->getCategoryTreeIds($productDto->categoryId);
+
+                return $query->whereExists(function ($subQuery) use ($categoryIds) {
                     $subQuery->select(DB::raw(1))
                         ->from('evo_category_product_view')
-                        ->where('evo_category_product_view.category_id', $productDto->categoryId)
-                        ->whereRaw('evo_product_info_view_json_opt.product_id = evo_category_product_view.product_id')
-                        ;
+                        ->whereIn('evo_category_product_view.category_id', $categoryIds)
+                        ->whereRaw('evo_product_info_view_json_opt.product_id = evo_category_product_view.product_id');
                 });
             })
             ->when($productDto->sortBy == 'price_desc', function($query) use($productDto) {
@@ -305,5 +371,138 @@ class ProductService
             ->where('product_id', $productId)
             ->where('stock_count', '>', 0)
             ->count();
+    }
+
+    /**
+     * @return list<int>
+     */
+    private function getCategoryTreeIds(int $categoryId): array
+    {
+        $rows = DB::select(
+            <<<'SQL'
+            WITH RECURSIVE category_tree AS (
+                SELECT category_id
+                FROM evo_category_view
+                WHERE category_id = ?
+
+                UNION ALL
+
+                SELECT c.category_id
+                FROM evo_category_view c
+                INNER JOIN category_tree ct ON c.parent = ct.category_id
+            )
+            SELECT category_id FROM category_tree
+            SQL,
+            [$categoryId],
+        );
+
+        return array_map(static fn ($row) => (int) $row->category_id, $rows);
+    }
+
+    /**
+     * Аналоги по МНН и форме выпуска (как на сайте).
+     *
+     * @return list<array<string, mixed>>
+     */
+    private function getAnalogProducts(int $productId, string $mnn, string $form): array
+    {
+        if ($mnn === '' || $form === '') {
+            return [];
+        }
+
+        $products = DB::table('product_cache')
+            ->where('mnn', $mnn)
+            ->where('form', $form)
+            ->where('product_id', '<>', $productId)
+            ->where('published', 1)
+            ->orderBy('pagetitle')
+            ->limit(20)
+            ->get([
+                'product_id',
+                'pagetitle',
+                'image',
+                'product_price_from',
+                'product_price_from_old',
+                'product_price_from_percent',
+                'is_available',
+            ])
+            ->map(static fn ($row) => (array) $row)
+            ->all();
+
+        return $this->enrichRelationProducts($products);
+    }
+
+    /**
+     * Подставляет минимальную цену из офферов, если в кэше товара цена пустая.
+     *
+     * @param  array<int, array<string, mixed>|object>  $products
+     * @return list<array<string, mixed>>
+     */
+    private function enrichRelationProducts(array $products): array
+    {
+        if ($products === []) {
+            return [];
+        }
+
+        $normalized = [];
+        foreach ($products as $product) {
+            if ($product instanceof \stdClass) {
+                $product = (array) $product;
+            }
+            if (!is_array($product) || empty($product['product_id'])) {
+                continue;
+            }
+            $normalized[] = $product;
+        }
+
+        if ($normalized === []) {
+            return [];
+        }
+
+        $productIds = array_map(static fn (array $product) => (int) $product['product_id'], $normalized);
+
+        $offerPrices = $this->loadMinOfferPrices($productIds);
+
+        return array_values(array_map(function (array $product) use ($offerPrices) {
+            $productId = (int) $product['product_id'];
+            $price = (float) ($product['product_price_from'] ?? 0);
+
+            if ($price <= 0 && $offerPrices->has($productId)) {
+                $offer = $offerPrices->get($productId);
+                $product['product_price_from'] = round((float) $offer->min_price, 2);
+
+                $priceOld = (float) ($offer->min_price_old ?? 0);
+                if ($priceOld > $product['product_price_from']) {
+                    $product['product_price_from_old'] = round($priceOld, 2);
+                }
+            }
+
+            if (empty($product['is_available']) && $offerPrices->has($productId)) {
+                $product['is_available'] = 1;
+            }
+
+            $product['is_available'] = (int) ($product['is_available'] ?? 0);
+
+            return $product;
+        }, $normalized));
+    }
+
+    /**
+     * @param  list<int>  $productIds
+     */
+    private function loadMinOfferPrices(array $productIds): \Illuminate\Support\Collection
+    {
+        if ($productIds === []) {
+            return collect();
+        }
+
+        return DB::table('offer_cache')
+            ->whereIn('product_id', $productIds)
+            ->where('stock_count', '>', 0)
+            ->where('price', '>', 0)
+            ->selectRaw('product_id, MIN(price) AS min_price, MIN(NULLIF(price_old, 0)) AS min_price_old')
+            ->groupBy('product_id')
+            ->get()
+            ->keyBy('product_id');
     }
 }
