@@ -68,13 +68,6 @@ class OrderController extends Controller
             ], 400);
         }
 
-        if (is_array($data) && isset($data['order']->created_at)) {
-            $data['order']->created_at = $this->formatDateTimeISO($data['order']->created_at);
-        }
-        if (is_array($data) && isset($data['order']->updated_at)) {
-            $data['order']->updated_at = $this->formatDateTimeISO($data['order']->updated_at);
-        }
-
         return response()->json([
             'data' => $data,
             'status' => 'success',
@@ -99,10 +92,16 @@ class OrderController extends Controller
             $fields = $this->decodeOrderFields($orderArray);
 
             if (isset($orderArray['created_at'])) {
-                $orderArray['created_at'] = $this->formatDateTimeISO($orderArray['created_at']);
+                $orderArray['created_at'] = $this->OrderService->formatOrderDateTimeForApi(
+                    $orderArray['created_at'],
+                    $fields,
+                );
             }
             if (isset($orderArray['updated_at'])) {
-                $orderArray['updated_at'] = $this->formatDateTimeISO($orderArray['updated_at']);
+                $orderArray['updated_at'] = $this->OrderService->formatOrderDateTimeForApi(
+                    $orderArray['updated_at'],
+                    $fields,
+                );
             }
 
             $orderArray = $this->OrderService->roundOrderFields($orderArray);
@@ -214,10 +213,16 @@ class OrderController extends Controller
             unset($orderArray['fields']);
 
             if (isset($orderArray['created_at'])) {
-                $orderArray['created_at'] = $this->formatDateTimeISO($orderArray['created_at']);
+                $orderArray['created_at'] = $this->OrderService->formatOrderDateTimeForApi(
+                    $orderArray['created_at'],
+                    $fields,
+                );
             }
             if (isset($orderArray['updated_at'])) {
-                $orderArray['updated_at'] = $this->formatDateTimeISO($orderArray['updated_at']);
+                $orderArray['updated_at'] = $this->OrderService->formatOrderDateTimeForApi(
+                    $orderArray['updated_at'],
+                    $fields,
+                );
             }
 
             return $orderArray;
@@ -297,14 +302,6 @@ class OrderController extends Controller
             'delivery_price' => round($deliveryPrice, 2),
             'total_price' => round($totalPrice, 2),
         ];
-    }
-
-    private function formatDateTimeISO($dateTime): string
-    {
-        if (is_string($dateTime)) {
-            $dateTime = \Carbon\Carbon::parse($dateTime);
-        }
-        return $dateTime->utc()->toISOString();
     }
 
     /**

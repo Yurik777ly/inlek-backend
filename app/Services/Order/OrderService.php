@@ -50,6 +50,7 @@ const SELF_GET_TITLES = [
 class OrderService
 {
     const AWAITING_PAY_STATUS = 10;
+    const RESERVED_STATUS = 4;
     private const DELIVERY_PRODUCT_ID = 18697039;
     private array $productCache = [];
 
@@ -151,7 +152,8 @@ class OrderService
                 }
 
                 // Создаем заказ
-                $orderId = $this->createOrder($orderArray, $orderCalculations, $cartData['orderProducts']);
+                $orderMeta = $this->createOrder($orderArray, $orderCalculations, $cartData['orderProducts']);
+                $orderId = $orderMeta['id'];
 
                 // Сохраняем товары заказа
                 $this->saveOrderProducts($orderId, $cartData['orderProducts']);
@@ -166,7 +168,13 @@ class OrderService
                 // 1С забирает заказы с id_status=1 и сам переводит их в «В обработке».
 
                 // Возвращаем ответ
-                return $this->formatOrderResponse($orderId, $orderArray, $orderCalculations,  $cartData['orderProducts']);
+                return $this->formatOrderResponse(
+                    $orderId,
+                    $orderArray,
+                    $orderCalculations,
+                    $cartData['orderProducts'],
+                    $orderMeta['created_at'],
+                );
             });
     }
 
@@ -191,7 +199,8 @@ class OrderService
         $cartDTO = new CartDetailedDTO(
             pharmacyId: $orderArray['pharmacy_id'],
             deliveryZone: $orderArray['delivery_zone'] ?? null,
-            promocodes: implode(',', $orderArray['promocodes'] ?? [])
+            // evo_carts_detailed сплитит промокоды по `|` (не по `,`)
+            promocodes: implode('|', $orderArray['promocodes'] ?? [])
         );
 
         $this->CartService->setUserGeo('', '');
@@ -264,6 +273,39 @@ class OrderService
                     ? trim(str_replace('Годен до ', '', (string) $offer->expiration_date)) ?: null
                     : null;
 
+                $marketingEventId = trim((string) (
+                    $product['id_marketingevent']
+                    ?? $product['marketing_event_id']
+                    ?? $product['marketingEventId']
+                    ?? ''
+                ));
+
+                $productOptions = [
+                    'id' => $offerId,
+                    'id_1c' => $productUid1c,
+                    'pharmacy_uid_1c' => $pharmacyUid1c,
+                    'offer_id' => $offerId,
+                    'pharmacy_id' => $resolvedPharmacyId,
+                    'product_id' => $productId,
+                    'iscancellations' => false,
+                    'number_1c' => 0,
+                    'price' => $price,
+                    'price_old' => $price_old,
+                    'expiration_date' => $expirationDate,
+                    'image' => $productCharachters['image'] ?? null,
+                    'promocodes' => $productPromocodes ?? [],
+                    'id_marketingevent' => $marketingEventId,
+                    'marketingEventId' => $marketingEventId,
+                ];
+
+                if (
+                    !$isDeliveryOrder
+                    && $orderPharmacyId > 0
+                    && $orderPharmacyId !== PharmaciesView::PHARMACY_ID_FOR_DELIVERY
+                ) {
+                    $productOptions['pickup_pharmacy_id'] = $orderPharmacyId;
+                }
+
                 $orderProducts[] = [
                     'product_id' => $productId,
                     'title' => $productInfo['pagetitle']
@@ -273,21 +315,7 @@ class OrderService
                     'price' => $price,
                     'count' => (int)$quantity,
                     'requested_quantity' => (int)$product['requested_quantity'],
-                    'options' => json_encode([
-                        'id' => $offerId,
-                        'id_1c' => $productUid1c,
-                        'pharmacy_uid_1c' => $pharmacyUid1c,
-                        'offer_id' => $offerId,
-                        'pharmacy_id' => $resolvedPharmacyId,
-                        'product_id' => $productId,
-                        'iscancellations' => false,
-                        'number_1c' => 0,
-                        'price' => $price,
-                        'price_old' => $price_old,
-                        'expiration_date' => $expirationDate,
-                        'image' => $productCharachters['image'] ?? null,
-                        'promocodes' => $productPromocodes ?? [],
-                    ], JSON_UNESCAPED_UNICODE),
+                    'options' => json_encode($productOptions, JSON_UNESCAPED_UNICODE),
                     'meta' => json_encode([
                         'product_info' => $productCharachters,
                         'promocodes_info' => $productPromocodes,
@@ -415,7 +443,7 @@ class OrderService
         }
     }
 
-    private function createOrder(array $orderArray, array $calculations, array $orderProducts = []): int
+    private function createOrder(array $orderArray, array $calculations, array $orderProducts = []): array
     {
         $fields = $this->buildOrderFields($orderArray, $calculations, $orderProducts);
 
@@ -432,7 +460,19 @@ class OrderService
         $order->amount = $calculations['totalSum'];
         $order->save();
 
-        return $order->id;
+        // Как на сайте: в БД храним минское wall-clock время (не UTC Laravel).
+        $minskNow = now('Europe/Minsk')->format('Y-m-d H:i:s');
+        DB::table('evo_commerce_orders')
+            ->where('id', $order->id)
+            ->update([
+                'created_at' => $minskNow,
+                'updated_at' => $minskNow,
+            ]);
+
+        return [
+            'id' => $order->id,
+            'created_at' => $minskNow,
+        ];
     }
 
     private function saveOrderProducts(int $orderId, array $orderProducts): void
@@ -516,18 +556,54 @@ class OrderService
     }
 
     public function createPaymentProcess(array $order) {
-        $statusId = $order['status_id'];
-        $paymentMethod = $order['payment_method'];
-        $isPaid = $order['is_paid'];
-        $totalSum = round((float)$order['total_sum'], 2);
-        if (
-            $statusId == self::AWAITING_PAY_STATUS &&
-            $paymentMethod !== 'cash' &&
-            $isPaid === null
-        ) {
-            return $this->processOrderPayment($order['order_id'], $totalSum, $paymentMethod);
+        $statusId = (int) ($order['status_id'] ?? 0);
+        $paymentMethod = $order['payment_method']
+            ?? data_get($order, 'fields.payment.id')
+            ?? data_get($order, 'fields.payment_method');
+        $isPaid = $order['is_paid'] ?? null;
+        $totalSum = round((float) ($order['total_sum'] ?? $order['amount'] ?? 0), 2);
+        $orderId = (int) ($order['order_id'] ?? $order['id'] ?? 0);
+
+        if ($orderId <= 0) {
+            return null;
         }
-        return null;
+
+        // Оплата доступна после подтверждения оператором («Зарезервирован»).
+        // status_id=10 оставляем для обратной совместимости.
+        $isPayableStatus = in_array($statusId, [
+            self::RESERVED_STATUS,
+            self::AWAITING_PAY_STATUS,
+        ], true);
+
+        if (
+            !$isPayableStatus ||
+            empty($paymentMethod) ||
+            $paymentMethod === 'cash' ||
+            $isPaid === true ||
+            $isPaid === 1 ||
+            $isPaid === '1'
+        ) {
+            return null;
+        }
+
+        $existingPayment = $this->EvoCommerceOrderPayments->query()
+            ->where('order_id', $orderId)
+            ->where(function ($query) {
+                $query->whereNull('paid')->orWhere('paid', 0);
+            })
+            ->orderByDesc('id')
+            ->first();
+
+        if ($existingPayment) {
+            return match ($paymentMethod) {
+                'bepaid' => new Bepaid(),
+                'oplati' => new Oplati(),
+                'erip' => new EripExpresspay(),
+                default => null
+            };
+        }
+
+        return $this->processOrderPayment($orderId, $totalSum, $paymentMethod);
     }
 
     private function updateOrderStatus(int $orderId, int $statusId): void
@@ -539,8 +615,13 @@ class OrderService
         }
     }
 
-    private function formatOrderResponse(int $orderId, array $orderArray, array $calculations, array $orderProducts = []): array
-    {
+    private function formatOrderResponse(
+        int $orderId,
+        array $orderArray,
+        array $calculations,
+        array $orderProducts = [],
+        ?string $createdAtMinsk = null,
+    ): array {
         // Получаем информацию об аптеке
         $pharmacyData = $this->PharmacyService->getPharmacyById($orderArray['pharmacy_id']);
         $pharmacy = $this->extractPharmacyInfo($pharmacyData);
@@ -566,7 +647,11 @@ class OrderService
             'phone' => $orderArray['phone'],
             'email' => $orderArray['email'] ?? '',
             'status_title' => 'Новый',
-            'created_at' => now()->format('Y-m-d H:i:s'),
+            'created_at' => $createdAtMinsk
+                ?? DB::table('evo_commerce_orders')
+                    ->where('id', $orderId)
+                    ->value('created_at')
+                ?? now('Europe/Minsk')->format('Y-m-d H:i:s'),
             'pharmacy_name' => $pharmacy?->pagetitle ?? ($isDelivery ? 'Доставка' : 'Аптека'),
             'pharmacy_id' => $pharmacy?->pharmacy_id ?? $orderArray['pharmacy_id'],
             'address' => $pharmacy?->address ?? ($isDelivery ? ($fullDeliveryAddress ?? '') : ''),
@@ -746,37 +831,60 @@ class OrderService
         // N+1 Fix: Собираем все ID аптек из всех заказов
         $pharmacyIds = collect($orderProductsByOrderId)->flatten()->map(function ($product) {
             $options = $this->safeJsonDecode($product->options) ?? [];
-            return $options['pharmacy_id'] ?? null;
-        })->filter()->unique()->toArray();
+            return $options['pickup_pharmacy_id'] ?? $options['pharmacy_id'] ?? null;
+        })->filter();
+
+        foreach ($orders as $order) {
+            $orderFields = $this->safeJsonDecode($order->fields) ?? [];
+            $pickupPharmacyId = $this->resolveOrderPickupPharmacyId($orderFields);
+            if ($pickupPharmacyId) {
+                $pharmacyIds->push($pickupPharmacyId);
+            }
+        }
+
+        $pharmacyIds = $pharmacyIds->unique()->values()->toArray();
 
         // N+1 Fix: Загружаем информацию по всем аптекам одним запросом
         $pharmaciesById = $this->getPharmaciesInfo($pharmacyIds);
 
-        return $orders->transform(function($order) use ($orderProductsByOrderId, $pharmaciesById) {
+        $productIds = collect($orderProductsByOrderId)
+            ->flatten()
+            ->pluck('product_id')
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+        $productsFullInfo = $this->getProductsInfo($productIds);
+
+        return $orders->transform(function($order) use ($orderProductsByOrderId, $pharmaciesById, $productsFullInfo) {
             $products = $orderProductsByOrderId->get($order->id, collect());
 
-            $order->order_products_json = $products->map(function($product) {
+            $order->order_products_json = $products->map(function($product) use ($productsFullInfo) {
                 $options = $this->safeJsonDecode($product->options) ?? [];
-                return [
+                $item = [
                     'product_id' => $product->product_id,
                     'pharmacy_id' => $options['pharmacy_id'] ?? null,
                     'product_title' => $product->title,
                     'price' => (float) round($product->price, 2),
                     'position' => $product->position,
                     'count' => $product->count,
-                    'options' => $options
+                    'options' => $options,
                 ];
+
+                return $this->enrichProductWithFullInfo($item, $productsFullInfo);
             })->toArray();
 
             $orderFields = $this->safeJsonDecode($order->fields) ?? [];
 
-            $firstPharmacyId = collect($order->order_products_json)
-                ->pluck('pharmacy_id')
-                ->filter()
-                ->first();
+            $displayPharmacyId = $this->resolveOrderDisplayPharmacyId(
+                $orderFields,
+                $order->order_products_json,
+            );
 
             // N+1 Fix: Получаем аптеку из заранее загруженной коллекции
-            $pharmacy = $pharmaciesById->get($firstPharmacyId);
+            $pharmacy = $displayPharmacyId
+                ? ($pharmaciesById->get($displayPharmacyId) ?? $this->getPharmacyInfo($displayPharmacyId))
+                : null;
 
             return $this->transformOrderWithEnrichedData($order, $pharmacy, $orderFields, $order->order_products_json);
         });
@@ -784,6 +892,8 @@ class OrderService
 
     private function enrichProductWithFullInfo(array $product, Collection $productsFullInfo): array
     {
+        $options = is_array($product['options'] ?? null) ? $product['options'] : [];
+
         $fullInfo = $productsFullInfo->get($product['product_id']);
         if ($fullInfo) {
             $productCharachters = $this->safeJsonDecode($fullInfo->product_charachters);
@@ -793,7 +903,74 @@ class OrderService
             $product['promocodes'] = $productPromocodes ?? [];
             $product['product_info'] = $productCharachters;
         }
+
+        if (empty($product['image']) && !empty($options['image'])) {
+            $product['image'] = $options['image'];
+        }
+
         return $product;
+    }
+
+    private function resolvePickupPharmacyIdFromProducts(array $enrichedProducts): ?int
+    {
+        foreach ($enrichedProducts as $product) {
+            $options = is_array($product['options'] ?? null) ? $product['options'] : [];
+            $pickupId = (int) ($options['pickup_pharmacy_id'] ?? 0);
+            if ($pickupId > 0 && $pickupId !== PharmaciesView::PHARMACY_ID_FOR_DELIVERY) {
+                return $pickupId;
+            }
+        }
+
+        return null;
+    }
+
+    private function resolveOrderPickupPharmacyId(array $orderFields): ?int
+    {
+        $pharmacyId = (int) ($orderFields['pharmacy_id'] ?? 0);
+
+        if ($pharmacyId > 0 && $pharmacyId !== PharmaciesView::PHARMACY_ID_FOR_DELIVERY) {
+            return $pharmacyId;
+        }
+
+        return null;
+    }
+
+    private function isDeliveryOrderFields(array $orderFields): bool
+    {
+        $deliveryId = $orderFields['delivery']['id'] ?? $orderFields['delivery_method'] ?? null;
+
+        return in_array($deliveryId, ['delivery', 'green', 'yellow', 'red'], true);
+    }
+
+    /**
+     * Аптека для отображения в истории заказов.
+     * Для самовывоза — выбранная пользователем точка, не склад из options товара.
+     */
+    private function resolveOrderDisplayPharmacyId(array $orderFields, array $enrichedProducts): ?int
+    {
+        if ($this->isDeliveryOrderFields($orderFields)) {
+            return null;
+        }
+
+        $fromFields = $this->resolveOrderPickupPharmacyId($orderFields);
+        if ($fromFields) {
+            return $fromFields;
+        }
+
+        $fromProducts = $this->resolvePickupPharmacyIdFromProducts($enrichedProducts);
+        if ($fromProducts) {
+            return $fromProducts;
+        }
+
+        if ($this->isMobileOrder($orderFields)) {
+            return null;
+        }
+
+        // Сайт: в options товара лежит аптека самовывоза.
+        return collect($enrichedProducts)
+            ->pluck('pharmacy_id')
+            ->filter()
+            ->first();
     }
 
     private function getPharmacyInfo(?int $pharmacyId): ?object
@@ -837,16 +1014,14 @@ class OrderService
 
     private function transformOrderWithEnrichedData($order, ?object $pharmacy, array $orderFields, array $enrichedProducts): object
     {
-        $order->pharmacy_name = $pharmacy?->pagetitle ?? 'Unknown Pharmacy';
-        $order->address = $pharmacy?->address;
-        $order->pharmacy_id = $pharmacy?->pharmacy_id;
         $order->order_products_json = $enrichedProducts;
+        $this->applyOrderPharmacyDisplay($order, $pharmacy, $orderFields, $enrichedProducts);
 
         if (isset($order->created_at)) {
-            $order->created_at = $this->formatDateTimeISO($order->created_at);
+            $order->created_at = $this->formatOrderDateTimeForApi($order->created_at, $orderFields);
         }
         if (isset($order->updated_at)) {
-            $order->updated_at = $this->formatDateTimeISO($order->updated_at);
+            $order->updated_at = $this->formatOrderDateTimeForApi($order->updated_at, $orderFields);
         }
 
         if (!empty($orderFields)) {
@@ -856,12 +1031,91 @@ class OrderService
         return $order;
     }
 
-    private function formatDateTimeISO($dateTime): string
-    {
-        if (is_string($dateTime)) {
-            $dateTime = \Carbon\Carbon::parse($dateTime);
+    private function applyOrderPharmacyDisplay(
+        $order,
+        ?object $pharmacy,
+        array $orderFields,
+        array $enrichedProducts,
+    ): void {
+        if ($this->isDeliveryOrderFields($orderFields)) {
+            return;
         }
-        return $dateTime->utc()->toISOString();
+
+        $pickupPharmacyId = $this->resolveOrderDisplayPharmacyId($orderFields, $enrichedProducts);
+
+        if ($pickupPharmacyId && (!$pharmacy || (int) ($pharmacy->pharmacy_id ?? 0) !== $pickupPharmacyId)) {
+            $pharmacy = $this->getPharmacyInfo($pickupPharmacyId) ?? $pharmacy;
+        }
+
+        if (!empty($orderFields['pharmacy_name'])) {
+            $order->pharmacy_name = (string) $orderFields['pharmacy_name'];
+        } elseif ($pharmacy?->pagetitle) {
+            $order->pharmacy_name = $pharmacy->pagetitle;
+        } else {
+            $order->pharmacy_name = $order->pharmacy_name ?? 'Аптека';
+        }
+
+        if (!empty($orderFields['pharmacy_address'])) {
+            $order->address = (string) $orderFields['pharmacy_address'];
+        } elseif ($pharmacy?->address) {
+            $order->address = $pharmacy->address;
+        }
+
+        if ($pickupPharmacyId) {
+            $order->pharmacy_id = $pickupPharmacyId;
+        } elseif ($pharmacy?->pharmacy_id) {
+            $order->pharmacy_id = $pharmacy->pharmacy_id;
+        }
+    }
+
+    public function formatOrderDateTimeForApi($dateTime, ?array $orderFields = null): string
+    {
+        if (empty($dateTime)) {
+            return '';
+        }
+
+        $storageTz = $this->resolveOrderDateTimeStorageTimezone($orderFields);
+
+        if ($dateTime instanceof \Carbon\Carbon) {
+            $carbon = $dateTime->copy()->timezone($storageTz);
+        } else {
+            $carbon = \Carbon\Carbon::parse((string) $dateTime, $storageTz);
+        }
+
+        return $carbon->setTimezone('Europe/Minsk')->format('Y-m-d H:i:s');
+    }
+
+    private function resolveOrderDateTimeStorageTimezone(?array $orderFields): string
+    {
+        if (($orderFields['time_storage'] ?? '') === 'minsk') {
+            return 'Europe/Minsk';
+        }
+
+        if ($this->isMobileOrder($orderFields)) {
+            return 'UTC';
+        }
+
+        return 'Europe/Minsk';
+    }
+
+    private function isMobileOrder(?array $orderFields): bool
+    {
+        if ($orderFields === null) {
+            return false;
+        }
+
+        if (($orderFields['order_source'] ?? '') === 'mobile') {
+            return true;
+        }
+
+        $items = $orderFields['orderData']['items'] ?? [];
+        if (!is_array($items) || $items === []) {
+            return false;
+        }
+
+        $first = $items[0] ?? [];
+
+        return isset($first['productId']) && !isset($first['product']);
     }
 
     private function fillOrderFieldsFromJson($order, array $orderFields): void
@@ -1042,15 +1296,8 @@ class OrderService
         if ($isDeliveryOrder || $orderPharmacyId === $deliveryPharmacyId) {
             // Для доставки в 1С всегда используем виртуальную аптеку доставки (uid_1c = 64).
             $pharmacyId = $deliveryPharmacyId;
-        } else {
-            $pharmacyId = (int) DB::table('offer_cache')
-                ->where('product_id', $productId)
-                ->where('pharmacy_id', '<>', $deliveryPharmacyId)
-                ->where('stock_count', '>', 0)
-                ->orderByDesc('stock_count')
-                ->orderBy('price')
-                ->value('pharmacy_id');
         }
+        // Самовывоз: как на сайте — выбранная аптека, не склад с max остатком.
 
         if ($pharmacyId <= 0) {
             return [
@@ -1262,6 +1509,21 @@ class OrderService
         $paymentTitle = $this->resolvePaymentTitle($paymentMethod);
         $paymentInfo = $this->resolvePaymentInfo($paymentMethod);
 
+        $pickupPharmacyId = null;
+        $pickupPharmacyName = null;
+        $pickupPharmacyAddress = null;
+        if ($deliveryId === 'self') {
+            $pharmacyId = (int) ($orderArray['pharmacy_id'] ?? 0);
+            if ($pharmacyId > 0 && $pharmacyId !== PharmaciesView::PHARMACY_ID_FOR_DELIVERY) {
+                $pickupPharmacyId = $pharmacyId;
+                $pickupPharmacy = $this->extractPharmacyInfo(
+                    $this->PharmacyService->getPharmacyById($pickupPharmacyId),
+                );
+                $pickupPharmacyName = $pickupPharmacy?->pagetitle;
+                $pickupPharmacyAddress = $pickupPharmacy?->address;
+            }
+        }
+
         $sum = [
             'pricesSum' => $calculations['sum'],
             'oldPricesSum' => $calculations['oldsum'],
@@ -1322,6 +1584,9 @@ class OrderService
             'floor' => $orderArray['floor'] ?? '',
             'apartment' => $orderArray['apartment'] ?? '',
             'intercom' => $orderArray['intercom'] ?? '',
+            'pharmacy_id' => $pickupPharmacyId,
+            'pharmacy_name' => $pickupPharmacyName,
+            'pharmacy_address' => $pickupPharmacyAddress,
             'delivery' => $delivery,
             'payment' => $payment,
             'promocodes' => $orderArray['promocodes'] ?? [],
@@ -1333,6 +1598,8 @@ class OrderService
             'payment_code' => $paymentInfo['payment_code'],
             'is_paid' => false,
             'online_payment_price' => 0,
+            'order_source' => 'mobile',
+            'time_storage' => 'minsk',
             'orderData' => $orderData,
         ], JSON_UNESCAPED_UNICODE);
     }

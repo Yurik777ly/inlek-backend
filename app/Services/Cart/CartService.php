@@ -18,6 +18,7 @@ use App\Models\CartsDetailed;
 use Mockery\Matcher\Any;
 use Symfony\Component\HttpKernel\Exception\UnprocessableEntityHttpException;
 use App\Services\Pharmacy\PharmacyService;
+use App\Services\Marketing\MarketingCartApplier;
 
 class CartService
 {
@@ -31,6 +32,7 @@ class CartService
         protected readonly CartProductPharmacyView $CartProductPharmacyView,
         protected readonly EvoOffers $evoOffers,
         protected readonly PharmacyService $pharmacyService,
+        protected readonly MarketingCartApplier $marketingCartApplier,
     ) {}
 
     public function addToCart(CartDTO $cartDTO)
@@ -171,6 +173,8 @@ class CartService
         }
 
         $data = $dataModel->toArray();
+
+        $data = $this->marketingCartApplier->apply($data, (int) $cartDTO->pharmacyId);
 
         $products = $data['cart']['products'] ?? [];
 

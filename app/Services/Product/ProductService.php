@@ -153,7 +153,9 @@ class ProductService
             $product['similar_products'] = $this->enrichRelationProducts($similarProducts);
 
             $product['availability'] = 'absent';
-            if ($this->getAvailablePharmaciesCount($productDto->productId) > 0) {
+            $pharmaciesCount = $this->getAvailablePharmaciesCount($productDto->productId);
+            $product['pharmacies_count'] = $pharmaciesCount;
+            if ($pharmaciesCount > 0) {
                 $product['availability'] = 'part';
             }
         }
@@ -276,33 +278,14 @@ class ProductService
     public function getPharmaciesByProductId(ProductDTO $productDto) //: Collection|array
     {
         $query = $this->ProductPharmacyJson->query()
-            ->select([
-                'evo_product_pharmacy_json.product_id',
-                'evo_product_info_view_json_opt.is_recipe',
-                'evo_product_info_view_json_opt.is_alcohol',
-                'evo_product_info_view_json_opt.is_available',
-                'evo_product_pharmacy_json.product_pharmacy_json',
-                'evo_product_pharmacy_json.coordinates',
-                'evo_product_pharmacy_json.pharmacy_id',
-                'evo_product_pharmacy_json.pharmacy_delivery'
-            ])
-            ->distinct()
-            ->join(
-                'evo_product_info_view_json_opt',
-                'evo_product_pharmacy_json.product_id',
-                '=',
-                'evo_product_info_view_json_opt.product_id'
-            )
-            ->where('evo_product_pharmacy_json.product_id', $productDto->productId);
+            ->where('product_id', $productDto->productId);
 
         $query->when(!empty($productDto->pharmacyId), function($q) use($productDto) {
             return $q->where('pharmacy_id', $productDto->pharmacyId);
         });
 
         $query->when(!empty($productDto->pharmacyDelivery), function($q) use($productDto) {
-            return $q
-                ->whereIn('evo_product_info_view_json_opt.delivery', $productDto->pharmacyDelivery)
-                ->whereIn('evo_product_pharmacy_json.pharmacy_delivery', $productDto->pharmacyDelivery);
+            return $q->whereIn('pharmacy_delivery', $productDto->pharmacyDelivery);
         });
 
         $query->when(!empty($productDto->pharmacyAddress), function($q) use($productDto) {
