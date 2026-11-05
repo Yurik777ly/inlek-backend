@@ -6,7 +6,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class MarketingCondition extends BaseMarketingModel
 {
-    protected $table = 'marketing_conditions';
+    protected $table = 'evo_marketing_conditions';
 
     protected $fillable = [
         'external_uuid',

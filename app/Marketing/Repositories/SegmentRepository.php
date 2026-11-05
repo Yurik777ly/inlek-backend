@@ -31,7 +31,7 @@ class SegmentRepository implements SegmentRepositoryInterface
             return $this->cache[$externalId];
         }
 
-        $id = DB::table('marketing_segments')
+        $id = DB::table('evo_marketing_segments')
             ->where('external_id', $externalId)
             ->value('id');
 
@@ -71,7 +71,7 @@ class SegmentRepository implements SegmentRepositoryInterface
             return;
         }
 
-        $rows = DB::table('marketing_segments')
+        $rows = DB::table('evo_marketing_segments')
             ->select('external_id', 'id')
             ->whereIn('external_id', $notLoaded)
             ->get();
@@ -159,7 +159,7 @@ class SegmentRepository implements SegmentRepositoryInterface
             return $this->productsCache[$segmentId];
         }
 
-        $productIds = DB::table('marketing_segment_products')
+        $productIds = DB::table('evo_marketing_segment_products')
             ->where('segment_id', $segmentId)
             ->pluck('product_id')
             ->map(fn ($id) => (int)$id)

@@ -174,7 +174,11 @@ class CartService
 
         $data = $dataModel->toArray();
 
-        $data = $this->marketingCartApplier->apply($data, (int) $cartDTO->pharmacyId);
+        try {
+            $data = $this->marketingCartApplier->apply($data, (int) $cartDTO->pharmacyId);
+        } catch (\Throwable $e) {
+            report($e);
+        }
 
         $products = $data['cart']['products'] ?? [];
 
@@ -422,18 +426,36 @@ class CartService
     public function getCartDetailedWithoutChoosenPharm(CartDetailedDTO $cartDTO)
     {
         $cart = $this->Cart->query()->where('user_id', auth()->user()->id)->first();
-        $cart->promocodes = $cartDTO->promocodes;
+        if (!$cart) {
+            return [];
+        }
+
+        $cart->promocodes = $cartDTO->promocodes ?? '';
         $cart->delivery_zone = $cartDTO->deliveryZone ?? null;
         $cart->save();
 
-        $data =$this->getCart();
-
-        if (!$data) {
-             return [];
+        $dataModel = $this->getCart();
+        if (!$dataModel instanceof CartsView) {
+            return [];
         }
 
-        $data = $this->formatCartData($data);
+        $deliveryPharmacyId = PharmaciesView::PHARMACY_ID_FOR_DELIVERY;
+        $data = $this->buildDeliveryCart($dataModel, $deliveryPharmacyId);
 
+        $basePrices = [];
+        foreach ($data['cart']['products'] as $product) {
+            $basePrices[(int) $product['product_id']] = (float) ($product['prices']['price'] ?? 0);
+        }
+
+        try {
+            $data = $this->marketingCartApplier->apply($data, $deliveryPharmacyId);
+        } catch (\Throwable $e) {
+            report($e);
+        }
+
+        $data = (new DeliveryPriceAdjuster())->apply($data, $basePrices);
+
+        $data['pharmacy_id'] = null;
         $data['pharmacy_name'] = 'Аптека не выбрана';
         $data['pharmacy_address'] = 'Аптека не выбрана';
         $data['pharmacy_availability'] = 'full';
@@ -441,103 +463,139 @@ class CartService
         return $data;
     }
 
-    private function decodeCartJsonField(mixed $value): array
+    /**
+     * Корзина доставки в том же виде, который уже умеет читать приложение:
+     * количество из корзины, без обнуления по остатку аптеки.
+     * Цена — оффер виртуальной аптеки, если он есть.
+     */
+    private function buildDeliveryCart(CartsView $cartsView, int $deliveryPharmacyId): array
     {
-        if (is_array($value)) {
-            return $value;
-        }
-
-        if (is_string($value) && $value !== '') {
-            $decoded = json_decode($value, true);
-
-            return is_array($decoded) ? $decoded : [];
-        }
-
-        return [];
-    }
-
-    private function formatCartData (CartsView $cartsView):array {
         $cartsView = $cartsView->toArray();
+        $items = is_array($cartsView['product_info'] ?? null) ? $cartsView['product_info'] : [];
 
-        $products = $cartsView['product_info'];
+        $parsed = [];
+        foreach ($items as $item) {
+            if (!is_array($item)) {
+                continue;
+            }
 
-        $finalArray = [
-            'user_id' => $cartsView['user_id'],
-            'cart' => [
-                'totals' => [
-                    "delivery_sum" => null,
-                    "total_discount" => 0,
-                    "total_price_old" => 0,
-                    "total_final_price" => 0,
-                    "discount_only_promos" => 0,
-                ],
-                'cart_id'  => $cartsView['cart']['cart_id'],
-                'user_id'  => $cartsView['user_id'],
-                'products' => [],
-                'all_promocodes' => [],
-                'entered_promocodes' => '',
-            ],
-            'distance' => null,
-            'availability_priority' => 0
-        ];
-        $totalSum = 0;
-        $totalSumOld = 0;
-        if (is_array($products)) {
-            foreach ($products as $product ) {
-                $characters = $this->decodeCartJsonField($product['product_charachters'] ?? null);
-                $quantity = (int) ($product['quantity'] ?? 0);
-                $price = (float) ($characters['product_price_from'] ?? 0);
-                $priceOldRaw = (float) ($characters['product_price_from_old'] ?? 0);
-                $priceOld = $priceOldRaw > $price ? $priceOldRaw : $price;
-                $productId = (int) (
-                    $characters['product_id']
-                    ?? $characters['id']
-                    ?? $product['product_id']
-                    ?? $product['evo_site_content_id']
-                    ?? 0
-                );
+            $characters = $item['product_charachters'] ?? null;
+            if (is_string($characters) && $characters !== '') {
+                $decoded = json_decode($characters, true);
+                $characters = is_array($decoded) ? $decoded : [];
+            }
+            if (!is_array($characters)) {
+                $characters = [];
+            }
 
-                if ($productId === 0) {
-                    continue;
-                }
+            $productId = (int) (
+                $characters['product_id']
+                ?? $characters['id']
+                ?? $item['product_id']
+                ?? 0
+            );
+            if ($productId === 0) {
+                continue;
+            }
 
-                $sumProduct = round($quantity * $price, 2);
-                $sumProductOld = round($quantity * $priceOld, 2);
-                $discountWithoutPromos = max(0, round($sumProductOld - $sumProduct, 2));
+            $quantity = (int) ($item['quantity'] ?? 0);
+            $parsed[$productId] = [
+                'quantity' => $quantity,
+                'characters' => $characters,
+                'action_json' => $item['action_json'] ?? null,
+            ];
+        }
 
-                $totalSum += $sumProduct;
-                $totalSumOld += $sumProductOld;
-                $finalArray['cart']['products'][] = [
-                    'prices' => [
-                        'price' => round($price, 2),
-                        'final_price' => round($price, 2),
-                        'price_old' => round($priceOld, 2),
-                    ],
-                    'quantity' => $quantity,
-                    'requested_quantity' => $quantity,
-                    'product_id' => $productId,
-                    'availability' => 'full',
-                    'action_json' => $product['action_json'] ?? null,
-                    'product_info' => $characters,
-                    'product_totals' =>  [
-                        "total" => $sumProduct,
-                        "total_old" => $sumProductOld,
-                        "final_total" => $sumProduct,
-                        "final_total_with_promos" => $sumProduct,
-                        "total_discount_only_promos" => 0.0,
-                        "total_discount_with_promos" => 0.0,
-                        "total_discount_without_promos" => $discountWithoutPromos,
-                    ],
-                ];
+        $offers = collect();
+        if ($parsed !== []) {
+            try {
+                $offers = DB::table('product_pharmacy_cache')
+                    ->where('pharmacy_id', $deliveryPharmacyId)
+                    ->whereIn('product_id', array_keys($parsed))
+                    ->get(['product_id', 'price', 'price_old', 'stock_count'])
+                    ->keyBy('product_id');
+            } catch (\Throwable $e) {
+                report($e);
             }
         }
 
-        $finalArray['cart']['totals']['total_price_old'] = round($totalSumOld, 2);
-        $finalArray['cart']['totals']['total_final_price'] = round($totalSum, 2);
-        $finalArray['cart']['totals']['total_discount'] = max(0, round($totalSumOld - $totalSum, 2));
+        $products = [];
+        $totalSum = 0.0;
+        foreach ($parsed as $productId => $item) {
+            $characters = $item['characters'];
+            $quantity = $item['quantity'];
+            $offer = $offers->get($productId);
 
-        return $finalArray;
-}
+            $selling = $offer !== null
+                ? (float) $offer->price
+                : (float) ($characters['product_price_from'] ?? 0);
+            $priceOld = $offer !== null
+                ? (float) $offer->price_old
+                : (float) ($characters['product_price_from_old'] ?? 0);
+            if ($priceOld <= $selling) {
+                $priceOld = $selling;
+            }
+
+            $selling = round($selling, 2);
+            $priceOld = round($priceOld, 2);
+            $sum = round($selling * $quantity, 2);
+            $totalSum += $sum;
+
+            $characters['product_price_from'] = $selling;
+            $characters['product_price_from_old'] = $priceOld;
+            $characters['product_price_from_percent'] = null;
+
+            $products[] = [
+                'prices' => [
+                    'price' => $selling,
+                    'final_price' => $selling,
+                    'final_price_with_promos' => $selling,
+                    'price_old' => $priceOld,
+                    'discount_only_promos' => 0.0,
+                    'discount_without_promos' => 0.0,
+                    'discount_with_promos' => 0.0,
+                    'applied_promocodes' => [],
+                ],
+                'quantity' => $quantity,
+                'requested_quantity' => $quantity,
+                'product_id' => $productId,
+                'availability' => 'full',
+                'action_json' => $item['action_json'],
+                'product_info' => $characters,
+                'product_totals' => [
+                    'total' => $sum,
+                    'total_old' => round($priceOld * $quantity, 2),
+                    'final_total' => $sum,
+                    'final_total_with_promos' => $sum,
+                    'total_discount_only_promos' => 0.0,
+                    'total_discount_with_promos' => 0.0,
+                    'total_discount_without_promos' => 0.0,
+                ],
+            ];
+        }
+
+        $cart = is_array($cartsView['cart'] ?? null) ? $cartsView['cart'] : [];
+
+        return [
+            'user_id' => $cartsView['user_id'] ?? null,
+            'pharmacy_id' => null,
+            'cart' => [
+                'totals' => [
+                    'delivery_sum' => null,
+                    'total_discount' => 0,
+                    'total_price_old' => round($totalSum, 2),
+                    'total_final_price' => round($totalSum, 2),
+                    'discount_only_promos' => 0,
+                ],
+                'cart_id' => $cart['cart_id'] ?? null,
+                'user_id' => $cartsView['user_id'] ?? null,
+                'products' => $products,
+                'all_promocodes' => [],
+                'entered_promocodes' => (string) ($cartsView['promocodes'] ?? ''),
+            ],
+        ];
+    }
+
     public function getPriorityPharmacy(CartPharmaciesDTO $dto)
     {
         $need = implode(', ', array_fill(0, count($dto->products), '?'));

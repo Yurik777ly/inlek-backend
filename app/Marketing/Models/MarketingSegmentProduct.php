@@ -6,7 +6,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class MarketingSegmentProduct extends BaseMarketingModel
 {
-    protected $table = 'marketing_segment_products';
+    protected $table = 'evo_marketing_segment_products';
 
     protected $fillable = [
         'segment_id',

@@ -6,7 +6,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class MarketingPharmacy extends BaseMarketingModel
 {
-    protected $table = 'marketing_pharmacies';
+    protected $table = 'evo_marketing_pharmacies';
 
     protected $fillable = [
         'marketing_event_id',

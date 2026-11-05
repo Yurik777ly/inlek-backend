@@ -6,7 +6,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class MarketingEvent extends BaseMarketingModel
 {
-    protected $table = 'marketing_events';
+    protected $table = 'evo_marketing_events';
 
     protected $fillable = [
         'external_id',

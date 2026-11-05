@@ -13,7 +13,7 @@ class MarketingItem extends BaseMarketingModel
     public const PROVIDE_AUTO = 1;
     public const PROVIDE_MANUAL = 2;
     public const PROVIDE_CARD = 3;
-    protected $table = 'marketing_items';
+    protected $table = 'evo_marketing_items';
 
     protected $fillable = [
         'marketing_event_id',
