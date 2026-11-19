@@ -11,9 +11,37 @@ namespace App\Services\Cart;
 class DeliveryPriceAdjuster
 {
     /**
-     * Представление корзины обрезает quantity до остатка виртуальной аптеки.
-     * Если оффера нет, quantity становится 0 и приложение снимает товар с корзины.
-     * Здесь возвращаем количество, которое пользователь реально положил.
+     * Количество в доставке не больше остатка виртуальной аптеки.
+     * Нет остатка — quantity 0 и availability absent: строка остаётся в корзине
+     * для самовывоза, но в заказ и в 1С не попадает.
+     *
+     * @return array{quantity: int, requested_quantity: int, stock_count: int, availability: string}
+     */
+    public function limitToVirtualStock(int $requested, int $stock): array
+    {
+        $requested = max(0, $requested);
+        $stock = max(0, $stock);
+        $quantity = min($requested, $stock);
+
+        if ($stock <= 0) {
+            $availability = 'absent';
+        } elseif ($quantity < $requested) {
+            $availability = 'part';
+        } else {
+            $availability = 'full';
+        }
+
+        return [
+            'quantity' => $quantity,
+            'requested_quantity' => $requested,
+            'stock_count' => $stock,
+            'availability' => $availability,
+        ];
+    }
+
+    /**
+     * Строка без оффера виртуальной аптеки остаётся в корзине,
+     * но количество доставки обрезается по остатку.
      *
      * @param array<string, mixed> $cartDetailed
      * @return array<string, mixed>
@@ -30,9 +58,16 @@ class DeliveryPriceAdjuster
                 continue;
             }
 
-            $requested = (int) ($product['requested_quantity'] ?? 0);
-            if ($requested > 0) {
-                $product['quantity'] = $requested;
+            $requested = (int) ($product['requested_quantity'] ?? $product['quantity'] ?? 0);
+            $stock = (int) ($product['stock_count'] ?? 0);
+            $limited = $this->limitToVirtualStock($requested, $stock);
+            $product['quantity'] = $limited['quantity'];
+            $product['requested_quantity'] = $limited['requested_quantity'];
+            $product['stock_count'] = $limited['stock_count'];
+            $product['availability'] = $limited['availability'];
+
+            if ($limited['quantity'] <= 0) {
+                continue;
             }
 
             $prices = is_array($product['prices'] ?? null) ? $product['prices'] : [];
@@ -46,12 +81,6 @@ class DeliveryPriceAdjuster
                     $prices['final_price'] = round($fallback, 2);
                     $product['prices'] = $prices;
                 }
-            }
-
-            $stock = (int) ($product['stock_count'] ?? 0);
-            if ($stock <= 0) {
-                unset($product['stock_count']);
-                $product['availability'] = 'full';
             }
         }
         unset($product);

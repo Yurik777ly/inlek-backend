@@ -89,7 +89,14 @@ class OrderService
                     $fields = json_decode($order->fields ?? '{}', true);
                     $paymentMethod = $fields['payment']['id'] ?? $fields['payment_method'] ?? null;
 
-                    if (in_array($paymentMethod, ['oplati', 'bepaid', 'erip'], true)) {
+                    if (in_array($paymentMethod, ['oplati', 'bepaid', 'erip', 'expresspay_erip'], true)) {
+                        if (empty($fields['is_paid'])) {
+                            $fields['is_paid'] = true;
+                            $fields['online_payment_price'] = round((float) $payment->amount, 2);
+                            $order->fields = json_encode($fields, JSON_UNESCAPED_UNICODE);
+                            $order->save();
+                        }
+
                         $orderProducts = $this->EvoCommerceOrderProducts->query()
                             ->where('order_id', $order->id)
                             ->get(['product_id']);
@@ -505,7 +512,7 @@ class OrderService
         }
     }
 
-        
+
     private function clearCartProductsV2(array $products): void
     {
         $productIds = [];
@@ -1431,10 +1438,10 @@ class OrderService
 
         return [
             'payment_code' => match ($paymentMethod) {
-                'cash' => 1,
-                'bepaid' => 2,
+                'cash' => 0,
+                'bepaid' => 1,
+                'erip' => 2,
                 'oplati' => 3,
-                'erip' => 4,
                 default => 0,
             },
             'online' => in_array($paymentMethod, ['bepaid', 'oplati', 'erip'], true),

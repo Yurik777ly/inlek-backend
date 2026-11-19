@@ -464,9 +464,10 @@ class CartService
     }
 
     /**
-     * Корзина доставки в том же виде, который уже умеет читать приложение:
-     * количество из корзины, без обнуления по остатку аптеки.
-     * Цена — оффер виртуальной аптеки, если он есть.
+     * Корзина доставки.
+     * Количество не больше остатка виртуальной аптеки.
+     * Нет оффера — quantity 0 и availability absent: строка остаётся для самовывоза
+     * и не уходит в заказ 1С. Цена — оффер виртуальной аптеки, если он есть.
      */
     private function buildDeliveryCart(CartsView $cartsView, int $deliveryPharmacyId): array
     {
@@ -507,6 +508,7 @@ class CartService
         }
 
         $offers = collect();
+        $otherPharmacyIds = [];
         if ($parsed !== []) {
             try {
                 $offers = DB::table('product_pharmacy_cache')
@@ -517,14 +519,32 @@ class CartService
             } catch (\Throwable $e) {
                 report($e);
             }
+
+            try {
+                $otherPharmacyIds = DB::table('product_pharmacy_cache')
+                    ->where('pharmacy_id', '<>', $deliveryPharmacyId)
+                    ->whereIn('product_id', array_keys($parsed))
+                    ->where('stock_count', '>', 0)
+                    ->distinct()
+                    ->pluck('product_id')
+                    ->map(fn ($id) => (int) $id)
+                    ->all();
+            } catch (\Throwable $e) {
+                report($e);
+            }
         }
+        $otherPharmacySet = array_fill_keys($otherPharmacyIds, true);
 
         $products = [];
         $totalSum = 0.0;
+        $adjuster = new DeliveryPriceAdjuster();
         foreach ($parsed as $productId => $item) {
             $characters = $item['characters'];
-            $quantity = $item['quantity'];
+            $requested = $item['quantity'];
             $offer = $offers->get($productId);
+            $stock = $offer !== null ? (int) floor((float) $offer->stock_count) : 0;
+            $limited = $adjuster->limitToVirtualStock($requested, $stock);
+            $quantity = $limited['quantity'];
 
             $selling = $offer !== null
                 ? (float) $offer->price
@@ -544,6 +564,9 @@ class CartService
             $characters['product_price_from'] = $selling;
             $characters['product_price_from_old'] = $priceOld;
             $characters['product_price_from_percent'] = null;
+            if (isset($otherPharmacySet[$productId])) {
+                $characters['other_pharmacy'] = 1;
+            }
 
             $products[] = [
                 'prices' => [
@@ -557,9 +580,10 @@ class CartService
                     'applied_promocodes' => [],
                 ],
                 'quantity' => $quantity,
-                'requested_quantity' => $quantity,
+                'requested_quantity' => $limited['requested_quantity'],
+                'stock_count' => $limited['stock_count'],
                 'product_id' => $productId,
-                'availability' => 'full',
+                'availability' => $limited['availability'],
                 'action_json' => $item['action_json'],
                 'product_info' => $characters,
                 'product_totals' => [
