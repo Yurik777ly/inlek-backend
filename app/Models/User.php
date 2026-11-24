@@ -76,7 +76,7 @@ class User extends Authenticatable
 
     public function cart(): HasOne
     {
-        return $this->hasOne(Cart::class, 'user_id');
+        return $this->hasOne(Cart::class, 'user_id')->orderBy('id');
     }
 
     public function notificateProducts()

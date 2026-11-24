@@ -7,12 +7,14 @@ use App\Http\Dto\Product\ProductDTO;
 use App\Http\Dto\Profile\ProfileDTO;
 use App\Models\EVO\EvoSiteContent;
 use App\Models\SMS;
+use App\Models\User;
 use App\Services\User\AuthService;
 use App\Services\User\ProfileService;
 use App\Services\Product\ProductService;
 use App\Services\Cart\CartService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\ValidationException;
 
 class ProductController extends Controller
@@ -106,15 +108,29 @@ class ProductController extends Controller
             geoLong: $long,
         );
 
-        if ($lat || $long) {
-            $this->CartService->setUserGeo(
-                $lat,
-                $long,
+        $user = $this->optionalSanctumUser();
+        if ($user && ($lat || $long)) {
+            $this->CartService->rememberGeoOnExistingCart(
+                (int) $user->id,
+                (string) ($lat ?? ''),
+                (string) ($long ?? ''),
             );
         }
 
         $products = $this->ProductService->getPharmaciesByProductId($productDto);
         return $this->responseOk(data: $products);
+    }
+
+    /**
+     * Sanctum без middleware auth: невалидный Bearer не даёт 401 и не становится пользователем.
+     * Успешный токен не переключает guard по умолчанию: auth()->id() на этих маршрутах остаётся пустым,
+     * поэтому идентификатор передаётся в корзину явно.
+     */
+    private function optionalSanctumUser(): ?User
+    {
+        $user = Auth::guard('sanctum')->user();
+
+        return $user instanceof User ? $user : null;
     }
 
     /**

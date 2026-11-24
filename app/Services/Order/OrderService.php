@@ -2,12 +2,14 @@
 
 namespace App\Services\Order;
 
+use App\Models\Cart;
 use App\Models\PharmaciesView;
 use App\Models\User;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Validation\ValidationException;
 use App\Models\OrderView;
 use App\Models\OrderViewJson;
 use App\Models\EVO\EvoCommerceOrderStatuses;
@@ -78,58 +80,129 @@ class OrderService
 
     public function pay($payhash): bool
     {
-        try {
-            $payment = $this->EvoCommerceOrderPayments->query()->where('hash', $payhash)->first();
-            if ($payment) {
-                $payment->paid = 1;
-                $payment->save();
+        $payment = $this->EvoCommerceOrderPayments->query()
+            ->where('hash', $payhash)
+            ->orderBy('id')
+            ->first();
 
-                $order = $this->EvoCommerceOrders->query()->where('id', $payment->order_id)->first();
-                if ($order) {
-                    $fields = json_decode($order->fields ?? '{}', true);
-                    $paymentMethod = $fields['payment']['id'] ?? $fields['payment_method'] ?? null;
-
-                    if (in_array($paymentMethod, ['oplati', 'bepaid', 'erip', 'expresspay_erip'], true)) {
-                        if (empty($fields['is_paid'])) {
-                            $fields['is_paid'] = true;
-                            $fields['online_payment_price'] = round((float) $payment->amount, 2);
-                            $order->fields = json_encode($fields, JSON_UNESCAPED_UNICODE);
-                            $order->save();
-                        }
-
-                        $orderProducts = $this->EvoCommerceOrderProducts->query()
-                            ->where('order_id', $order->id)
-                            ->get(['product_id']);
-
-                        $productIds = $orderProducts->pluck('product_id')->unique()->values()->all();
-
-                        if (!empty($productIds) && !empty($order->customer_id)) {
-                            $user = User::query()->find($order->customer_id);
-                            if ($user && method_exists($user, 'cart') && $user->cart) {
-                                $user->cart->products()->detach($productIds);
-                            }
-                            if ($user && $user->fcm_token) {
-                                $result = $this->firebaseService->sendToDevice(
-                                    $user->fcm_token,
-                                    [
-                                        'title' => 'Inlek. Информация о заказе.',
-                                        'body'  => 'Ваш заказ оплачен.',
-                                    ]
-                                );
-                                if (!$result['success']) {
-                                    Log::error('Не удалось отправить push о провеении оплаты.', ['hash' => $payhash, 'error' => 'Push сообщение не отправлено.']);
-                                }
-                            }
-                        }
-                    }
-                }
-
-                return true;
-            }
-        } catch (\Exception $e) {
-            Log::error('Payment processing failed', ['hash' => $payhash, 'error' => $e->getMessage()]);
+        if (!$payment) {
+            return false;
         }
-        return false;
+
+        return DB::transaction(function () use ($payment) {
+            $locked = $this->EvoCommerceOrderPayments->query()
+                ->whereKey($payment->id)
+                ->lockForUpdate()
+                ->first();
+
+            if (!$locked) {
+                return false;
+            }
+
+            $meta = $this->decodePaymentMeta($locked->meta);
+            $order = $this->EvoCommerceOrders->query()->whereKey($locked->order_id)->first();
+            $fields = [];
+            $paymentMethod = null;
+            if ($order) {
+                $decodedFields = json_decode($order->fields ?? '{}', true);
+                $fields = is_array($decodedFields) ? $decodedFields : [];
+                $paymentMethod = $fields['payment']['id'] ?? $fields['payment_method'] ?? null;
+            }
+            $isOnlinePayment = in_array($paymentMethod, ['oplati', 'bepaid', 'erip', 'expresspay_erip'], true);
+            $shouldSavePayment = false;
+
+            if ((int) $locked->paid !== 1) {
+                $locked->paid = 1;
+                $shouldSavePayment = true;
+
+                if ($order && $isOnlinePayment && empty($fields['is_paid'])) {
+                    $fields['is_paid'] = true;
+                    $fields['online_payment_price'] = round((float) $locked->amount, 2);
+                    $order->fields = json_encode($fields, JSON_UNESCAPED_UNICODE);
+                    $order->save();
+                }
+            }
+
+            if ($isOnlinePayment && (($meta['push_notification']['state'] ?? null) !== 'sent')) {
+                $pushBefore = $meta['push_notification'] ?? null;
+                $this->deliverPaymentPush($order, $meta);
+                if (($meta['push_notification'] ?? null) !== $pushBefore) {
+                    $locked->meta = json_encode($meta, JSON_UNESCAPED_UNICODE);
+                    $shouldSavePayment = true;
+                }
+            }
+
+            if ($shouldSavePayment) {
+                $locked->save();
+            }
+
+            return true;
+        });
+    }
+
+    /**
+     * Сохраняет исходную строку, если в meta не объект JSON.
+     *
+     * @return array<string, mixed>
+     */
+    private function decodePaymentMeta(mixed $raw): array
+    {
+        if ($raw === null || $raw === '') {
+            return [];
+        }
+
+        if (is_array($raw)) {
+            return $raw;
+        }
+
+        $decoded = json_decode((string) $raw, true);
+        if (!is_array($decoded)) {
+            return ['_unparsed_meta' => (string) $raw];
+        }
+
+        return $decoded;
+    }
+
+    /**
+     * @param array<string, mixed> $meta
+     */
+    private function deliverPaymentPush(?EvoCommerceOrders $order, array &$meta): void
+    {
+        $user = ($order && !empty($order->customer_id))
+            ? User::query()->find($order->customer_id)
+            : null;
+
+        if (!$user || empty($user->fcm_token)) {
+            return;
+        }
+
+        $result = $this->firebaseService->sendToDevice(
+            $user->fcm_token,
+            [
+                'title' => 'Inlek. Информация о заказе.',
+                'body' => 'Ваш заказ оплачен.',
+            ]
+        );
+
+        if (!empty($result['success'])) {
+            $meta['push_notification'] = [
+                'state' => 'sent',
+                'sent_at' => now()->utc()->format('Y-m-d\TH:i:s\Z'),
+                'error' => null,
+            ];
+
+            return;
+        }
+
+        $meta['push_notification'] = [
+            'state' => 'failed',
+            'sent_at' => null,
+            'error' => mb_substr((string) ($result['error'] ?? 'Push сообщение не отправлено.'), 0, 500),
+        ];
+        Log::error('Не удалось отправить push о проведении оплаты.', [
+            'order_id' => $order?->id,
+            'error' => $meta['push_notification']['error'],
+        ]);
     }
 
     public function create($orderArray)
@@ -138,6 +211,9 @@ class OrderService
             $orderArray['pharmacy_id'] = ($orderArray['pharmacy_id'] == 0) ? PharmaciesView::PHARMACY_ID_FOR_DELIVERY : $orderArray['pharmacy_id'];
 
             return DB::transaction(function () use ($orderArray) {
+                // users → carts до чтения состава. Блокировка держится до commit или отката.
+                $this->CartService->lockCanonicalCart((int) auth()->id());
+
                 // Обновляем информацию о пользователе
                 $this->updateUserInfo($orderArray);
 
@@ -146,6 +222,8 @@ class OrderService
                 if (empty($cartData['products']) || empty($cartData['orderProducts'])) {
                     return false;
                 }
+
+                $this->assertDeliveryAllowsProducts($orderArray, $cartData['orderProducts']);
 
                 // Рассчитываем суммы заказа
                 $orderCalculations = $this->calculateOrderTotals($cartData, $orderArray);
@@ -183,6 +261,55 @@ class OrderService
                     $orderMeta['created_at'],
                 );
             });
+    }
+
+    /**
+     * Доставка — тот же признак, что в getCartData: способ delivery либо виртуальная аптека.
+     * pharmacy_id = 0 к этому моменту уже заменён на 17599997.
+     *
+     * @param list<array<string, mixed>> $orderProducts
+     */
+    private function assertDeliveryAllowsProducts(array $orderArray, array $orderProducts): void
+    {
+        $isDelivery = (int) ($orderArray['pharmacy_id'] ?? 0) === PharmaciesView::PHARMACY_ID_FOR_DELIVERY
+            || ($orderArray['delivery'] ?? '') === 'delivery';
+        if (!$isDelivery) {
+            return;
+        }
+
+        $productIds = [];
+        foreach ($orderProducts as $product) {
+            $productId = (int) ($product['product_id'] ?? 0);
+            if ($productId > 0 && $productId !== self::DELIVERY_PRODUCT_ID) {
+                $productIds[] = $productId;
+            }
+        }
+        if ($productIds === []) {
+            return;
+        }
+
+        $restricted = DB::table('product_cache')
+            ->whereIn('product_id', array_values(array_unique($productIds)))
+            ->get(['product_id', 'is_recipe', 'is_alcohol'])
+            ->contains(fn ($row) => $this->catalogFlagIsSet($row->is_recipe) || $this->catalogFlagIsSet($row->is_alcohol));
+
+        if ($restricted) {
+            throw ValidationException::withMessages([
+                'delivery' => 'Оформление доставки невозможно: в заказе есть товары, доступные только для самовывоза.',
+            ]);
+        }
+    }
+
+    private function catalogFlagIsSet(mixed $value): bool
+    {
+        if (is_bool($value)) {
+            return $value;
+        }
+        if (is_numeric($value)) {
+            return (int) $value === 1;
+        }
+
+        return in_array(strtolower(trim((string) $value)), ['1', 'true', 'yes'], true);
     }
 
     private function updateUserInfo(array $orderArray): void
@@ -506,29 +633,40 @@ class OrderService
 
     private function clearCartProducts(array $productIds): void
     {
-        if (!empty($productIds)) {
-            // Используем detach с массивом ID для выполнения одного запроса
-            auth()->user()->cart->products()->detach($productIds);
+        if (empty($productIds)) {
+            return;
         }
+
+        $cartId = $this->CartService->findCanonicalCart((int) auth()->id())->id;
+        $this->CartService->modifyLockedCart($cartId, function (Cart $lockedCart) use ($productIds) {
+            $lockedCart->products()->detach($productIds);
+        });
     }
 
 
     private function clearCartProductsV2(array $products): void
     {
-        $productIds = [];
-        if (!empty($products)) {
+        if (empty($products)) {
+            return;
+        }
+
+        $cartId = $this->CartService->findCanonicalCart((int) auth()->id())->id;
+        $this->CartService->modifyLockedCart($cartId, function (Cart $lockedCart) use ($products) {
+            $productIds = [];
             foreach ($products as $product) {
                 if ($product['count'] == $product['requested_quantity']) {
                     $productIds[] = $product['product_id'];
-                }
-                else {
-                    auth()->user()->cart->products()->syncWithoutDetaching([
-                        $product['product_id'] => ['quantity' => $product['requested_quantity'] - $product['count']]
+                } else {
+                    $lockedCart->products()->syncWithoutDetaching([
+                        $product['product_id'] => ['quantity' => $product['requested_quantity'] - $product['count']],
                     ]);
                 }
             }
-        }
-        $this->clearCartProducts($productIds);
+
+            if (!empty($productIds)) {
+                $lockedCart->products()->detach($productIds);
+            }
+        });
     }
 
     private function createOrderHistory(int $orderId): void

@@ -12,9 +12,12 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use App\Models\User;
 use App\Models\Cart;
+use App\Models\CartMergeOperation;
 use App\Models\CartsView;
 use App\Models\CartProductPharmacyView;
 use App\Models\CartsDetailed;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
+use Illuminate\Database\QueryException;
 use Mockery\Matcher\Any;
 use Symfony\Component\HttpKernel\Exception\UnprocessableEntityHttpException;
 use App\Services\Pharmacy\PharmacyService;
@@ -37,28 +40,89 @@ class CartService
 
     public function addToCart(CartDTO $cartDTO)
     {
-        DB::transaction(function () use ($cartDTO) {
-            $pharmacyId = $cartDTO->pharmacy_id;
-            $cart = $cartDTO->cart;
-            $productId = $cartDTO->product_id;
+        $cartId = $cartDTO->cart->id;
 
-            $quantityMax = $this->getQuantity($productId, $pharmacyId);
+        $this->modifyLockedCart($cartId, function (Cart $lockedCart) use ($cartDTO) {
+            $quantityMax = $this->getQuantity($cartDTO->product_id, $cartDTO->pharmacy_id);
 
             if ($cartDTO->quantity > $quantityMax) {
                 throw new UnprocessableEntityHttpException('Больше нет в наличии');
             }
 
-            $lockedCart = Cart::where('id', $cart->id)->lockForUpdate()->first();
-
             if ($cartDTO->quantity <= 0) {
-                $lockedCart->products()->detach($productId);
+                $lockedCart->products()->detach($cartDTO->product_id);
             } else {
                 $lockedCart->products()->syncWithoutDetaching([
-                    $productId => ['quantity' => $cartDTO->quantity]
+                    $cartDTO->product_id => ['quantity' => $cartDTO->quantity],
                 ]);
             }
-
         });
+    }
+
+    /**
+     * Прибавляет delta к количеству товара в канонической корзине.
+     * Повтор того же user_id + merge_token + product_id возвращает сохранённый результат.
+     *
+     * @return array{product_id: int, quantity: int, limited: bool, already_applied: bool}
+     */
+    public function mergeGuestItem(User $user, int $productId, string $mergeToken, int $delta): array
+    {
+        $cart = $this->findCanonicalCart($user->id);
+        if (!$cart) {
+            $cart = $this->checkCart();
+        }
+
+        try {
+            return $this->modifyLockedCart((int) $cart->id, function (Cart $lockedCart) use ($user, $productId, $mergeToken, $delta) {
+                $existing = $this->findMergeOperation($user->id, $mergeToken, $productId, true);
+                if ($existing) {
+                    return $this->mergePayload($existing, true);
+                }
+
+                $productExists = DB::table('evo_site_content')->where('id', $productId)->exists();
+                if (!$productExists) {
+                    throw new UnprocessableEntityHttpException('Товар недоступен');
+                }
+
+                $currentQuantity = (int) (DB::table('cart_evo_site_content')
+                    ->where('cart_id', $lockedCart->id)
+                    ->where('evo_site_content_id', $productId)
+                    ->orderBy('id')
+                    ->value('quantity') ?? 0);
+
+                $availableStock = (int) $this->getQuantity($productId, null);
+                if ($availableStock <= 0) {
+                    throw new UnprocessableEntityHttpException('Товар недоступен');
+                }
+
+                $requestedQuantity = $currentQuantity + $delta;
+                $finalQuantity = min($requestedQuantity, $availableStock, 255);
+                $limited = $finalQuantity < $requestedQuantity;
+
+                $lockedCart->products()->syncWithoutDetaching([
+                    $productId => ['quantity' => $finalQuantity],
+                ]);
+
+                $operation = CartMergeOperation::query()->create([
+                    'user_id' => $user->id,
+                    'merge_token' => $mergeToken,
+                    'product_id' => $productId,
+                    'quantity' => $finalQuantity,
+                    'limited' => $limited,
+                ]);
+
+                return $this->mergePayload($operation, false);
+            });
+        } catch (QueryException $e) {
+            if ($this->isDuplicateMergeOperation($e)) {
+                $existing = $this->findMergeOperation($user->id, $mergeToken, $productId, false);
+                if ($existing) {
+                    return $this->mergePayload($existing, true);
+                }
+            }
+
+            throw $e;
+        }
     }
 
     public function addMultipleToCart(User $user, array $products): void
@@ -67,39 +131,194 @@ class CartService
             return;
         }
 
-        $cart = $user->cart;
+        $cart = $this->findCanonicalCart($user->id);
+        if (!$cart) {
+            throw (new ModelNotFoundException())->setModel(Cart::class);
+        }
 
         $itemsToSync = collect($products)->mapWithKeys(function ($item) {
             return [$item['product_id'] => ['quantity' => $item['quantity']]];
         })->all();
 
-        $cart->products()->syncWithoutDetaching($itemsToSync);
+        $this->modifyLockedCart($cart->id, function (Cart $lockedCart) use ($itemsToSync) {
+            $lockedCart->products()->syncWithoutDetaching($itemsToSync);
+        });
     }
 
     public function clearCart(User $user)
     {
-        $user->cart->products()->detach();
+        $cart = $this->findCanonicalCart($user->id);
+        if (!$cart) {
+            throw (new ModelNotFoundException())->setModel(Cart::class);
+        }
+
+        $this->modifyLockedCart($cart->id, function (Cart $lockedCart) {
+            $lockedCart->products()->detach();
+        });
     }
 
-    public function checkCart()
+    /**
+     * Создаёт одну корзину пользователя.
+     * Сначала блокируется строка users, затем повторно читается корзина с наименьшим id.
+     */
+    public function checkCart(): Cart
     {
-        if (!auth()->user()->cart) {
-            $this->Cart->create([
-                'user_id' => auth()->user()->id,
-                'promo' => '1'
+        $userId = auth()->id();
+
+        return DB::transaction(function () use ($userId) {
+            $user = User::query()->whereKey($userId)->lockForUpdate()->first();
+
+            if (!$user) {
+                throw (new ModelNotFoundException())->setModel(User::class, [$userId]);
+            }
+
+            $cart = Cart::query()
+                ->where('user_id', $user->id)
+                ->orderBy('id')
+                ->first();
+
+            if ($cart) {
+                return $cart;
+            }
+
+            return Cart::query()->create([
+                'user_id' => $user->id,
+                'promo' => '1',
             ]);
+        });
+    }
+
+    /**
+     * Строка представления для выбранной корзины.
+     * У evo_carts_view и evo_carts_detailed нет колонки cart_id: идентификатор лежит в JSON cart.cart_id.
+     *
+     * @param \Illuminate\Database\Eloquent\Builder<\Illuminate\Database\Eloquent\Model> $query
+     */
+    private function firstCartSnapshot($query, int $userId, int $cartId)
+    {
+        return $query
+            ->where('user_id', $userId)
+            ->whereRaw(
+                "CAST(JSON_UNQUOTE(JSON_EXTRACT(`cart`, '$.cart_id')) AS UNSIGNED) = ?",
+                [$cartId]
+            )
+            ->first();
+    }
+
+    /**
+     * Корзина, которую приложение считает текущей, пока на user_id нет уникального индекса.
+     */
+    public function findCanonicalCart(int $userId): ?Cart
+    {
+        return Cart::query()
+            ->where('user_id', $userId)
+            ->orderBy('id')
+            ->first();
+    }
+
+    /**
+     * Строка users, затем каноническая корзина с наименьшим id.
+     * Тот же порядок, что у checkCart() и очистки пустых дублей.
+     * Метод не открывает свою транзакцию: блокировка должна дожить до commit оформления.
+     */
+    public function lockCanonicalCart(int $userId): ?Cart
+    {
+        if (DB::transactionLevel() < 1) {
+            throw new \RuntimeException('Каноническая корзина блокируется только внутри транзакции оформления.');
         }
+
+        $user = User::query()->whereKey($userId)->lockForUpdate()->first();
+        if (!$user) {
+            return null;
+        }
+
+        return Cart::query()
+            ->where('user_id', $user->id)
+            ->orderBy('id')
+            ->lockForUpdate()
+            ->first();
+    }
+
+    /**
+     * Единый порядок изменения состава корзины: транзакция, блокировка строки carts, затем pivot.
+     * Блокировка пользователя сюда не входит.
+     *
+     * @template T
+     * @param callable(Cart): T $callback
+     * @return T
+     */
+    public function modifyLockedCart(int $cartId, callable $callback): mixed
+    {
+        return DB::transaction(function () use ($cartId, $callback) {
+            $cart = Cart::query()->whereKey($cartId)->lockForUpdate()->first();
+
+            if (!$cart) {
+                throw (new ModelNotFoundException())->setModel(Cart::class, [$cartId]);
+            }
+
+            return $callback($cart);
+        });
+    }
+
+    private function findMergeOperation(int $userId, string $mergeToken, int $productId, bool $lock): ?CartMergeOperation
+    {
+        $query = CartMergeOperation::query()
+            ->where('user_id', $userId)
+            ->where('merge_token', $mergeToken)
+            ->where('product_id', $productId);
+
+        if ($lock) {
+            $query->lockForUpdate();
+        }
+
+        return $query->first();
+    }
+
+    /**
+     * @return array{product_id: int, quantity: int, limited: bool, already_applied: bool}
+     */
+    private function mergePayload(CartMergeOperation $operation, bool $alreadyApplied): array
+    {
+        return [
+            'product_id' => (int) $operation->product_id,
+            'quantity' => (int) $operation->quantity,
+            'limited' => (bool) $operation->limited,
+            'already_applied' => $alreadyApplied,
+        ];
+    }
+
+    private function isDuplicateMergeOperation(QueryException $exception): bool
+    {
+        return ($exception->errorInfo[0] ?? null) === '23000'
+            && (int) ($exception->errorInfo[1] ?? 0) === 1062;
     }
 
     public function getCart()
     {
-        $this->checkCart();
-        $data = $this->CartsView->query()->where('user_id', auth()->user()->id)->first();
-        return ($data) ? $data : [];
+        $cart = $this->checkCart();
+        $data = $this->firstCartSnapshot($this->CartsView->query(), (int) $cart->user_id, (int) $cart->id);
+
+        return $data ?: [];
     }
 
     public function setUserGeo(String $lat, String $long) {
-        $cart = $this->Cart->query()->where('user_id', auth()->user()->id)->first();
+        $cart = $this->findCanonicalCart((int) auth()->id());
+        $cart->geo_lat = $lat;
+        $cart->geo_long = $long;
+        $cart->save();
+    }
+
+    /**
+     * Записывает координаты в уже существующую корзину с наименьшим id.
+     * Новую корзину не создаёт.
+     */
+    public function rememberGeoOnExistingCart(int $userId, string $lat, string $long): void
+    {
+        $cart = $this->findCanonicalCart($userId);
+        if (!$cart) {
+            return;
+        }
+
         $cart->geo_lat = $lat;
         $cart->geo_long = $long;
         $cart->save();
@@ -157,16 +376,17 @@ class CartService
 
     public function getCartDetailed(CartDetailedDTO $cartDTO): array
     {
-        $cart = $this->Cart->query()->where('user_id', auth()->user()->id)->first();
+        $cart = $this->findCanonicalCart((int) auth()->id());
         $cart->pharmacy_id = $cartDTO->pharmacyId;
         $cart->promocodes = $cartDTO->promocodes;
         $cart->delivery_zone = $cartDTO->deliveryZone ?? null;
         $cart->save();
 
-        $dataModel = $this->CartsDetailed
-            ->query()
-            ->where('user_id', auth()->id())
-            ->first();
+        $dataModel = $this->firstCartSnapshot(
+            $this->CartsDetailed->query(),
+            (int) $cart->user_id,
+            (int) $cart->id
+        );
 
         if (! $dataModel) {
             return [];
@@ -219,8 +439,14 @@ class CartService
     public function getProductByPharmacies(CartPharmaciesDTO $dto, bool $withoutDelivery = false): array
     {
         $userId = auth()->user()->id;
+        $cart = $this->findCanonicalCart($userId);
+        if (!$cart) {
+            return [];
+        }
+
         $record = CartProductPharmacyView::query()
             ->where('user_id', $userId)
+            ->where('cart_id', $cart->id)
             ->first(['cart']);
 
         if (!$record) {
@@ -425,7 +651,7 @@ class CartService
 
     public function getCartDetailedWithoutChoosenPharm(CartDetailedDTO $cartDTO)
     {
-        $cart = $this->Cart->query()->where('user_id', auth()->user()->id)->first();
+        $cart = $this->findCanonicalCart((int) auth()->id());
         if (!$cart) {
             return [];
         }
@@ -624,6 +850,10 @@ class CartService
     {
         $need = implode(', ', array_fill(0, count($dto->products), '?'));
         $userId = auth()->user()->id;
+        $cart = $this->findCanonicalCart($userId);
+        if (!$cart || $dto->products === []) {
+            return [];
+        }
         $requestedIds = array_map(fn($item) => $item->productId, $dto->products);
 
         $result = DB::select('SELECT
@@ -649,13 +879,16 @@ class CartService
 	            	END AS distance_meters
 	            FROM
 	            	carts
-	            	LEFT JOIN evo_product_pharmacy_view ON evo_product_pharmacy_view.pharmacy_id <> '.PharmaciesView::PHARMACY_ID_FOR_DELIVERY.'
-	            	JOIN cart_evo_site_content  ON evo_product_pharmacy_view.product_id = cart_evo_site_content.evo_site_content_id
+	            	JOIN cart_evo_site_content ON cart_evo_site_content.cart_id = carts.id
+	            	JOIN evo_product_pharmacy_view
+	            	    ON evo_product_pharmacy_view.product_id = cart_evo_site_content.evo_site_content_id
+	            	   AND evo_product_pharmacy_view.pharmacy_id <> '.PharmaciesView::PHARMACY_ID_FOR_DELIVERY.'
 	            WHERE
 	            	carts.user_id = ?
+	            AND carts.id = ?
 	            AND evo_product_pharmacy_view.product_id IN ('.$need.')
 	            and evo_product_pharmacy_view.stock_count > 0
-	            ORDER BY distance_meters, pharmacy_id', [$userId, ...$requestedIds]);
+	            ORDER BY distance_meters, pharmacy_id', [$userId, $cart->id, ...$requestedIds]);
 
         if (!$result) {
             return [];

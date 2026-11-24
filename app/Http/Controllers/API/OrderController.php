@@ -7,7 +7,9 @@ use App\Services\Order\OrderService;
 
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Validation\ValidationException;
 use App\Models\EVO\EvoCommerceOrders;
 use App\Models\EVO\EvoCommerceOrderPayments;
 
@@ -52,6 +54,11 @@ class OrderController extends Controller
 
         try {
             $data = $this->OrderService->create($validator->validated());
+        } catch (ValidationException $e) {
+            return response()->json([
+                'status' => 'error',
+                'errors' => $e->errors(),
+            ], 422);
         } catch (\Throwable $e) {
             report($e);
 
@@ -330,12 +337,23 @@ class OrderController extends Controller
 
     public function payment(Request $request): JsonResponse
     {
-        if(!empty($request->token))
-        {
-            $this->OrderService->pay($request->token);
+        if ($request->is('api/payments/payment-failed')) {
+            return $this->responseOk();
         }
-        //file_put_contents('payment_get.txt', var_export($_GET, 1));
-        //file_put_contents('payment_post.txt', var_export($_POST, 1));
+
+        if (
+            ($request->is('api/payments/payment-success') || $request->is('api/payments/payment-process'))
+            && !empty($request->token)
+        ) {
+            try {
+                $this->OrderService->pay($request->token);
+            } catch (\Throwable $e) {
+                Log::error('Payment processing failed', [
+                    'hash' => $request->token,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
 
         return $this->responseOk();
     }

@@ -68,6 +68,10 @@ class CartController extends Controller
 
     public function addToCart(Request $request): JsonResponse
     {
+        if ($request->exists('merge_token') || $request->exists('delta')) {
+            return $this->mergeGuestCart($request);
+        }
+
         $validated = $request->validate([
             'product_id' => ['required', 'integer', 'exists:evo_site_content,id'],
             'quantity' => ['required', 'integer'],
@@ -89,6 +93,28 @@ class CartController extends Controller
         }
 
         //return $this->getCart($request);
+    }
+
+    private function mergeGuestCart(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'product_id' => ['required', 'integer'],
+            'merge_token' => ['required', 'string', 'max:64'],
+            'delta' => ['required', 'integer', 'min:1'],
+        ]);
+
+        try {
+            $result = $this->CartService->mergeGuestItem(
+                $request->user(),
+                (int) $validated['product_id'],
+                $validated['merge_token'],
+                (int) $validated['delta'],
+            );
+
+            return $this->responseOk($result);
+        } catch (UnprocessableEntityHttpException $e) {
+            return $this->response(data: ['error' => $e->getMessage()], code: 422);
+        }
     }
 
     public function clearCart(Request $request): JsonResponse

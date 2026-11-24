@@ -42,11 +42,7 @@ Route::middleware('auth:sanctum')->group(function () {
     });
 
     Route::prefix('product')->group(function () {
-        Route::get('/search',           [ProductController::class,  'getFilteredList']);
-        Route::get('/daily',            [ProductController::class,  'getDaily']);
-        Route::get('/{id}',             [ProductController::class,  'getById']);
-        Route::get('/{id}/pharmacies',  [ProductController::class,  'getPharmaciesByProductId']);
-        Route::post('/{id}/notification',[ProductController::class, 'addProductNotification']);  
+        Route::post('/{id}/notification',[ProductController::class, 'addProductNotification']);
     });
 
     Route::prefix('cart')->group(function () {
@@ -75,14 +71,24 @@ Route::middleware('auth:sanctum')->group(function () {
          Route::prefix('payments')->group(function () {
             Route::get('/', function(){var_dump(123);exit;});
             Route::get('/payments-status', [OrderController::class, 'paymentStatus']);
-            Route::get('/payment-success', [OrderController::class, 'payment']);
-            Route::post('/payment-success', [OrderController::class, 'payment']);
-            Route::get('/payment-failed', [OrderController::class, 'payment']);
-            Route::post('/payment-failed', [OrderController::class, 'payment']);
-            Route::get('/payment-process', [OrderController::class, 'payment']);
-            Route::post('/payment-process', [OrderController::class, 'payment']);
          });
 
+});
+
+Route::prefix('product')->group(function () {
+    Route::get('/search', [ProductController::class, 'getFilteredList']);
+    Route::get('/daily', [ProductController::class, 'getDaily']);
+    Route::get('/{id}', [ProductController::class, 'getById']);
+    Route::get('/{id}/pharmacies', [ProductController::class, 'getPharmaciesByProductId']);
+});
+
+Route::prefix('payments')->group(function () {
+    Route::get('/payment-success', [OrderController::class, 'payment']);
+    Route::post('/payment-success', [OrderController::class, 'payment']);
+    Route::get('/payment-failed', [OrderController::class, 'payment']);
+    Route::post('/payment-failed', [OrderController::class, 'payment']);
+    Route::get('/payment-process', [OrderController::class, 'payment']);
+    Route::post('/payment-process', [OrderController::class, 'payment']);
 });
 
 Route::prefix('categories')->group(function () {
